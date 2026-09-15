@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: craftstock-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: craftstock
+      POSTGRES_PASSWORD: craftstock
+      POSTGRES_DB: craftstock
+    ports:
+      # Host port is configurable: a local PostgreSQL installation may already
+      # hold 5432. Set POSTGRES_PORT in .env to move it.
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - craftstock-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` only proves the server answers: it reports healthy even when
+      # the role or the database does not exist. A real query is what tells us the
+      # cluster was initialized as expected.
+      test: ['CMD-SHELL', 'psql -U craftstock -d craftstock -c "SELECT 1" || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  craftstock-postgres-data:
+    name: craftstock-postgres-data

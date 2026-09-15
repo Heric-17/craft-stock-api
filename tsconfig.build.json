@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Pinned so that type-checking `prisma.config.ts` from the root tsconfig does
+    // not move the emitted entrypoint to `dist/src/main.js`.
+    "rootDir": "./src",
+    // Kept inside the output directory on purpose: `nest build` wipes `dist/` via
+    // `deleteOutDir`, and a build cache that survives the wipe makes the compiler
+    // skip files it believes are up to date, emitting an incomplete `dist/`.
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "test",
+    "prisma.config.ts",
+    "**/*.spec.ts",
+    "**/*.e2e-spec.ts"
+  ]
+}

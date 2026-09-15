@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_ENV: test
+  LOG_LEVEL: error
+  DATABASE_URL: postgresql://craftstock:craftstock@localhost:5432/craftstock_test?schema=public
+
+jobs:
+  ci:
+    name: type-check, lint and tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: craftstock
+          POSTGRES_PASSWORD: craftstock
+          POSTGRES_DB: craftstock_test
+        ports:
+          - 5432:5432
+        # A real query, not `pg_isready`: the latter reports healthy even when the
+        # role or database is missing, which hides a broken cluster.
+        options: >-
+          --health-cmd "psql -U craftstock -d craftstock_test -c 'SELECT 1' || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `postinstall` runs `prisma generate`, which loads prisma.config.ts and
+      # therefore needs DATABASE_URL (set at job level). The generated client is
+      # not committed, so every step after this one depends on it.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Validate Prisma schema
+        run: npm run prisma:validate
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: E2E tests
+        run: npm run test:e2e

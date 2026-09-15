@@ -1,0 +1,20 @@
+// CraftStock database schema.
+//
+// No domain models yet: this milestone only establishes the connection and the
+// generator. Models arrive with their own modules, alongside the domain entities
+// and the mappers that translate between them.
+//
+// The connection URL is not declared here: since Prisma 7 it belongs to
+// prisma.config.ts, and the client itself receives a driver adapter.
+// The generated client is emitted inside `infrastructure/` on purpose, so that
+// importing it from anywhere else breaks the ESLint guard.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/shared/infrastructure/prisma/generated"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
