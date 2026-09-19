@@ -52,6 +52,10 @@ export class PrismaSaleRepository implements SaleRepository {
     );
   }
 
+  async deleteItem(id: string): Promise<void> {
+    await this.prisma.saleItem.delete({ where: { id } });
+  }
+
   async findStockMovementsBySaleId(saleId: string): Promise<StockMovementSnapshot[]> {
     const rows = await this.prisma.stockMovementSnapshot.findMany({ where: { saleId } });
     return rows.map((row) => StockMovementSnapshotMapper.toDomain(row));
@@ -68,5 +72,9 @@ export class PrismaSaleRepository implements SaleRepository {
         });
       }),
     );
+  }
+
+  async deleteStockMovementsBySaleId(saleId: string): Promise<void> {
+    await this.prisma.stockMovementSnapshot.deleteMany({ where: { saleId } });
   }
 }

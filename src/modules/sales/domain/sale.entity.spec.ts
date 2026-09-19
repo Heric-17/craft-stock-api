@@ -30,4 +30,39 @@ describe('Sale', () => {
   it('rejects an empty paymentMethod', () => {
     expect(() => build({ paymentMethod: '' })).toThrow(InvalidSaleError);
   });
+
+  describe('update', () => {
+    it('changes customer/payment-method fields without touching either status axis', () => {
+      const sale = build({ paymentStatus: 'PAID', productionStatus: 'ASSEMBLED' });
+
+      const updated = sale.update({ customerName: 'Joana' }, new Date('2026-01-02T00:00:00Z'));
+
+      expect(updated.customerName).toBe('Joana');
+      expect(updated.paymentStatus).toBe('PAID');
+      expect(updated.productionStatus).toBe('ASSEMBLED');
+      expect(updated).not.toBe(sale);
+    });
+  });
+
+  describe('withPaymentStatus', () => {
+    it('changes paymentStatus without touching productionStatus', () => {
+      const sale = build({ paymentStatus: 'PENDING', productionStatus: 'ASSEMBLED' });
+
+      const updated = sale.withPaymentStatus('PAID', new Date('2026-01-02T00:00:00Z'));
+
+      expect(updated.paymentStatus).toBe('PAID');
+      expect(updated.productionStatus).toBe('ASSEMBLED');
+    });
+  });
+
+  describe('withProductionStatus', () => {
+    it('changes productionStatus without touching paymentStatus', () => {
+      const sale = build({ paymentStatus: 'PAID', productionStatus: 'PENDING' });
+
+      const updated = sale.withProductionStatus('ASSEMBLED', new Date('2026-01-02T00:00:00Z'));
+
+      expect(updated.productionStatus).toBe('ASSEMBLED');
+      expect(updated.paymentStatus).toBe('PAID');
+    });
+  });
 });

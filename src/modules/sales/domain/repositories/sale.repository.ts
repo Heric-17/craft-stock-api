@@ -19,6 +19,14 @@ export interface SaleRepository {
    * new one instead.
    */
   saveItems(items: SaleItem[]): Promise<void>;
+  /** Removes a single line. The only way to change which entity a line references — see CLAUDE.md section 10. */
+  deleteItem(id: string): Promise<void>;
   findStockMovementsBySaleId(saleId: string): Promise<StockMovementSnapshot[]>;
   saveStockMovements(snapshots: StockMovementSnapshot[]): Promise<void>;
+  /**
+   * Clears the snapshots once their debit has been reversed (`ASSEMBLED` ->
+   * `PENDING`), so a later re-assembly starts a fresh debit instead of being
+   * mistaken for a duplicate of one already reversed.
+   */
+  deleteStockMovementsBySaleId(saleId: string): Promise<void>;
 }

@@ -46,4 +46,35 @@ export class Sale {
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }
+
+  /** Immutable edit of the customer/payment-method fields. Never touches either status axis. */
+  update(
+    changes: Partial<Pick<SaleProps, 'customerName' | 'customerContact' | 'paymentMethod'>>,
+    updatedAt: Date,
+  ): Sale {
+    return new Sale({ ...this.toProps(), ...changes, updatedAt });
+  }
+
+  /** Changes the payment axis only — never touches productionStatus. */
+  withPaymentStatus(paymentStatus: PaymentStatus, updatedAt: Date): Sale {
+    return new Sale({ ...this.toProps(), paymentStatus, updatedAt });
+  }
+
+  /** Changes the production axis only — never touches paymentStatus. */
+  withProductionStatus(productionStatus: ProductionStatus, updatedAt: Date): Sale {
+    return new Sale({ ...this.toProps(), productionStatus, updatedAt });
+  }
+
+  private toProps(): SaleProps {
+    return {
+      id: this.id,
+      customerName: this.customerName,
+      customerContact: this.customerContact,
+      paymentMethod: this.paymentMethod,
+      paymentStatus: this.paymentStatus,
+      productionStatus: this.productionStatus,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+    };
+  }
 }

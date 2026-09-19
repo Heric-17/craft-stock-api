@@ -38,6 +38,11 @@ export class InMemorySaleRepository implements SaleRepository {
     return Promise.resolve();
   }
 
+  async deleteItem(id: string): Promise<void> {
+    this.items.delete(id);
+    return Promise.resolve();
+  }
+
   async findStockMovementsBySaleId(saleId: string): Promise<StockMovementSnapshot[]> {
     return Promise.resolve(
       [...this.stockMovements.values()].filter((snapshot) => snapshot.saleId === saleId),
@@ -47,6 +52,15 @@ export class InMemorySaleRepository implements SaleRepository {
   async saveStockMovements(snapshots: StockMovementSnapshot[]): Promise<void> {
     for (const snapshot of snapshots) {
       this.stockMovements.set(snapshot.id, snapshot);
+    }
+    return Promise.resolve();
+  }
+
+  async deleteStockMovementsBySaleId(saleId: string): Promise<void> {
+    for (const [id, snapshot] of this.stockMovements) {
+      if (snapshot.saleId === saleId) {
+        this.stockMovements.delete(id);
+      }
     }
     return Promise.resolve();
   }
