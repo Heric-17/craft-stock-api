@@ -14,7 +14,8 @@ export class SaleItemMapper {
       compositeProductId: row.compositeProductId,
       materialId: row.materialId,
       quantity: row.quantity.toNumber(),
-      unitPrice: toDomainMoney(row.unitPrice),
+      itemNameSnapshot: row.itemNameSnapshot,
+      unitPriceSnapshot: toDomainMoney(row.unitPriceSnapshot),
     });
   }
 
@@ -25,7 +26,8 @@ export class SaleItemMapper {
       compositeProductId: item.compositeProductId,
       materialId: item.materialId,
       quantity: new Prisma.Decimal(item.quantity),
-      unitPrice: toPersistenceDecimal(item.unitPrice),
+      itemNameSnapshot: item.itemNameSnapshot,
+      unitPriceSnapshot: toPersistenceDecimal(item.unitPriceSnapshot),
     };
   }
 }

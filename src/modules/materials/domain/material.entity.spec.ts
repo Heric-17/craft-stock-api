@@ -12,6 +12,7 @@ function buildProps(overrides: Partial<MaterialProps> = {}): MaterialProps {
     packageQuantity: 1000,
     stockQuantity: 500,
     minimumStockAlert: 100,
+    discontinuedAt: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
@@ -155,6 +156,56 @@ describe('Material', () => {
 
       expect(sameValue).toBe(material);
       expect(lowerValue).toBe(material);
+    });
+  });
+
+  describe('isActive / discontinue / reactivate', () => {
+    it('is active by default (discontinuedAt is null)', () => {
+      const material = new Material(buildProps());
+
+      expect(material.isActive).toBe(true);
+    });
+
+    it('discontinue sets discontinuedAt and flips isActive', () => {
+      const material = new Material(buildProps());
+      const discontinuedAt = new Date('2026-02-01T00:00:00Z');
+
+      const discontinued = material.discontinue(discontinuedAt);
+
+      expect(discontinued.isActive).toBe(false);
+      expect(discontinued.discontinuedAt).toEqual(discontinuedAt);
+      expect(discontinued).not.toBe(material);
+    });
+
+    it('rejects discontinuing an already discontinued Material', () => {
+      const material = new Material(
+        buildProps({ discontinuedAt: new Date('2026-01-15T00:00:00Z') }),
+      );
+
+      expect(() => material.discontinue(new Date('2026-02-01T00:00:00Z'))).toThrow(
+        InvalidMaterialError,
+      );
+    });
+
+    it('reactivate clears discontinuedAt and flips isActive back', () => {
+      const material = new Material(
+        buildProps({ discontinuedAt: new Date('2026-01-15T00:00:00Z') }),
+      );
+      const updatedAt = new Date('2026-02-01T00:00:00Z');
+
+      const reactivated = material.reactivate(updatedAt);
+
+      expect(reactivated.isActive).toBe(true);
+      expect(reactivated.discontinuedAt).toBeNull();
+      expect(reactivated.updatedAt).toEqual(updatedAt);
+    });
+
+    it('rejects reactivating a Material that is already active', () => {
+      const material = new Material(buildProps());
+
+      expect(() => material.reactivate(new Date('2026-02-01T00:00:00Z'))).toThrow(
+        InvalidMaterialError,
+      );
     });
   });
 });

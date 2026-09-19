@@ -6,6 +6,7 @@ import type { CompositeProductRepository } from '../../domain/repositories/compo
 export class InMemoryCompositeProductRepository implements CompositeProductRepository {
   private readonly products = new Map<string, CompositeProduct>();
   private readonly billsOfMaterials = new Map<string, BillOfMaterials>();
+  private readonly referenceCounts = new Map<string, number>();
 
   async findById(id: string): Promise<CompositeProduct | null> {
     return Promise.resolve(this.products.get(id) ?? null);
@@ -32,5 +33,14 @@ export class InMemoryCompositeProductRepository implements CompositeProductRepos
   async saveBillOfMaterials(billOfMaterials: BillOfMaterials): Promise<void> {
     this.billsOfMaterials.set(billOfMaterials.compositeProductId, billOfMaterials);
     return Promise.resolve();
+  }
+
+  async countReferences(compositeProductId: string): Promise<number> {
+    return Promise.resolve(this.referenceCounts.get(compositeProductId) ?? 0);
+  }
+
+  /** Test-only seam: simulates `compositeProductId` being referenced by a `SaleItem` row that lives in another module's table this fake has no access to. */
+  setReferenceCount(compositeProductId: string, count: number): void {
+    this.referenceCounts.set(compositeProductId, count);
   }
 }

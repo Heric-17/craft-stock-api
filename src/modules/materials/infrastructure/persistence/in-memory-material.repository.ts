@@ -6,6 +6,7 @@ import type { MaterialRepository } from '../../domain/repositories/material.repo
 export class InMemoryMaterialRepository implements MaterialRepository {
   private readonly materials = new Map<string, Material>();
   private readonly priceHistories: MaterialPriceHistory[] = [];
+  private readonly referenceCounts = new Map<string, number>();
 
   async findById(id: string): Promise<Material | null> {
     return Promise.resolve(this.materials.get(id) ?? null);
@@ -32,5 +33,18 @@ export class InMemoryMaterialRepository implements MaterialRepository {
 
   async findPriceHistoryByMaterialId(materialId: string): Promise<MaterialPriceHistory[]> {
     return Promise.resolve(this.priceHistories.filter((entry) => entry.materialId === materialId));
+  }
+
+  async countReferences(materialId: string): Promise<number> {
+    return Promise.resolve(this.referenceCounts.get(materialId) ?? 0);
+  }
+
+  /**
+   * Test-only seam: simulates `materialId` being referenced by a `BomItem`,
+   * `SaleItem`, `PurchaseItem`, or `StockMovementSnapshot` row that would, in
+   * Postgres, live in another module's table this fake has no access to.
+   */
+  setReferenceCount(materialId: string, count: number): void {
+    this.referenceCounts.set(materialId, count);
   }
 }

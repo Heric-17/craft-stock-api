@@ -1,4 +1,4 @@
-/** Read model for a `Material`, with `unitCost` and `lowStock` computed at read time — never persisted. */
+/** Read model for a `Material`, with `unitCost`, `lowStock`, and `isActive` computed at read time — never persisted. */
 export interface MaterialView {
   id: string;
   name: string;
@@ -10,6 +10,8 @@ export interface MaterialView {
   minimumStockAlert: number;
   unitCost: string;
   lowStock: boolean;
+  isActive: boolean;
+  discontinuedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

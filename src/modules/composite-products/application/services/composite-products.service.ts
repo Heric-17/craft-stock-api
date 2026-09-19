@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 
+import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
 import { Money } from '../../../../shared/domain/money/money';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
 import type { Material } from '../../../materials/domain/material.entity';
@@ -17,6 +18,7 @@ import {
 } from '../../domain/composite-product.entity';
 import {
   CompositeProductNotFoundError,
+  InactiveMaterialReferenceError,
   UnknownMaterialReferenceError,
 } from '../../domain/composite-product.error';
 import {
@@ -52,6 +54,7 @@ export class CompositeProductsService {
       fixedOperationalCost: Money.fromDecimalString(input.fixedOperationalCost),
       profitMargin: input.profitMargin,
       manualPrice: input.manualPrice ? Money.fromDecimalString(input.manualPrice) : null,
+      discontinuedAt: null,
       createdAt: now,
       updatedAt: now,
     });
@@ -59,6 +62,7 @@ export class CompositeProductsService {
     const materialsById = await this.loadMaterialsOrThrow(
       input.billOfMaterials.map((item) => item.materialId),
     );
+    this.assertMaterialsActive(materialsById);
     const billOfMaterials = this.buildBillOfMaterials(
       randomUUID(),
       productId,
@@ -102,6 +106,7 @@ export class CompositeProductsService {
       materialsById = await this.loadMaterialsOrThrow(
         input.billOfMaterials.map((item) => item.materialId),
       );
+      this.assertMaterialsActive(materialsById);
       const currentBom = await this.compositeProducts.findBillOfMaterials(productId);
       billOfMaterials = this.buildBillOfMaterials(
         currentBom?.id ?? randomUUID(),
@@ -136,7 +141,8 @@ export class CompositeProductsService {
     return CompositeProductViewMapper.toView(product, billOfMaterials, materialsById);
   }
 
-  async list(): Promise<CompositeProductView[]> {
+  /** Active CompositeProducts only by default — see CLAUDE.md section 9. */
+  async list(includeDiscontinued = false): Promise<CompositeProductView[]> {
     const products = await this.compositeProducts.findAll();
     const allMaterials = await this.materials.findAll();
     const materialsById = new Map(allMaterials.map((material) => [material.id, material]));
@@ -144,6 +150,10 @@ export class CompositeProductsService {
     const views: CompositeProductView[] = [];
 
     for (const product of products) {
+      if (!includeDiscontinued && !product.isActive) {
+        continue;
+      }
+
       const billOfMaterials = await this.findBillOfMaterialsOrThrow(product.id);
       views.push(CompositeProductViewMapper.toView(product, billOfMaterials, materialsById));
     }
@@ -151,9 +161,56 @@ export class CompositeProductsService {
     return views;
   }
 
+  /**
+   * Physical delete — allowed only when no `SaleItem` references this
+   * CompositeProduct (CLAUDE.md section 9). Otherwise throws
+   * `EntityInUseError`; the caller should discontinue it instead.
+   */
   async delete(productId: string): Promise<void> {
     await this.findProductOrThrow(productId);
-    await this.compositeProducts.delete(productId);
+    const referenceCount = await this.compositeProducts.countReferences(productId);
+
+    if (referenceCount > 0) {
+      throw new EntityInUseError('CompositeProduct', productId, referenceCount);
+    }
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.compositeProducts.delete(productId);
+    });
+  }
+
+  async discontinue(productId: string): Promise<CompositeProductView> {
+    const now = new Date();
+    const current = await this.findProductOrThrow(productId);
+    const updated = current.discontinue(now);
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.compositeProducts.save(updated);
+    });
+
+    const billOfMaterials = await this.findBillOfMaterialsOrThrow(productId);
+    const materialsById = await this.loadMaterialsOrThrow(
+      billOfMaterials.items.map((item) => item.materialId),
+    );
+
+    return CompositeProductViewMapper.toView(updated, billOfMaterials, materialsById);
+  }
+
+  async reactivate(productId: string): Promise<CompositeProductView> {
+    const now = new Date();
+    const current = await this.findProductOrThrow(productId);
+    const updated = current.reactivate(now);
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.compositeProducts.save(updated);
+    });
+
+    const billOfMaterials = await this.findBillOfMaterialsOrThrow(productId);
+    const materialsById = await this.loadMaterialsOrThrow(
+      billOfMaterials.items.map((item) => item.materialId),
+    );
+
+    return CompositeProductViewMapper.toView(updated, billOfMaterials, materialsById);
   }
 
   private buildBillOfMaterials(
@@ -193,6 +250,22 @@ export class CompositeProductsService {
     }
 
     return materialsById;
+  }
+
+  /**
+   * A discontinued Material can stay in a recipe that already used it
+   * (`loadMaterialsOrThrow` never filters by `isActive`), but it cannot be
+   * added to a *new* `BomItem` — CLAUDE.md section 9. Called only from the
+   * write paths that build a fresh `BillOfMaterials`, never from reads.
+   */
+  private assertMaterialsActive(materialsById: ReadonlyMap<string, Material>): void {
+    for (const material of materialsById.values()) {
+      if (!material.isActive) {
+        throw new InactiveMaterialReferenceError(
+          `BillOfMaterials references Material ${material.id} ("${material.name}"), which is discontinued.`,
+        );
+      }
+    }
   }
 
   private async findProductOrThrow(productId: string): Promise<CompositeProduct> {

@@ -62,6 +62,8 @@ export interface CompositeProductView {
   productionCapacity: number;
   bottleneck: BottleneckView | null;
   billOfMaterials: BomItemView[];
+  isActive: boolean;
+  discontinuedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

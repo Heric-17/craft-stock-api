@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 
+import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
 import { Money } from '../../../../shared/domain/money/money';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
 import { Material } from '../../domain/material.entity';
@@ -41,6 +42,7 @@ export class MaterialsService {
       packageQuantity: input.packageQuantity,
       stockQuantity: input.stockQuantity,
       minimumStockAlert: input.minimumStockAlert,
+      discontinuedAt: null,
       createdAt: now,
       updatedAt: now,
     });
@@ -111,16 +113,22 @@ export class MaterialsService {
     return MaterialViewMapper.toView(updated);
   }
 
-  async list(): Promise<MaterialView[]> {
+  /** Active Materials only by default — see CLAUDE.md section 9. */
+  async list(includeDiscontinued = false): Promise<MaterialView[]> {
     const materials = await this.materials.findAll();
-    return materials.map((material) => MaterialViewMapper.toView(material));
+
+    return materials
+      .filter((material) => includeDiscontinued || material.isActive)
+      .map((material) => MaterialViewMapper.toView(material));
   }
 
-  async search(query: string): Promise<MaterialView[]> {
+  /** Active Materials only by default — see CLAUDE.md section 9. */
+  async search(query: string, includeDiscontinued = false): Promise<MaterialView[]> {
     const normalizedQuery = normalizeForSearch(query);
     const materials = await this.materials.findAll();
 
     return materials
+      .filter((material) => includeDiscontinued || material.isActive)
       .filter((material) => normalizeForSearch(material.name).includes(normalizedQuery))
       .map((material) => MaterialViewMapper.toView(material));
   }
@@ -163,6 +171,48 @@ export class MaterialsService {
     await this.findByIdOrThrow(materialId);
     const entries = await this.materials.findPriceHistoryByMaterialId(materialId);
     return entries.map((entry) => MaterialViewMapper.toPriceHistoryView(entry));
+  }
+
+  /**
+   * Physical delete — allowed only when nothing references this Material
+   * (CLAUDE.md section 9). Otherwise throws `EntityInUseError`; the caller
+   * should discontinue it instead.
+   */
+  async delete(materialId: string): Promise<void> {
+    await this.findByIdOrThrow(materialId);
+    const referenceCount = await this.materials.countReferences(materialId);
+
+    if (referenceCount > 0) {
+      throw new EntityInUseError('Material', materialId, referenceCount);
+    }
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.materials.delete(materialId);
+    });
+  }
+
+  async discontinue(materialId: string): Promise<MaterialView> {
+    const now = new Date();
+    const current = await this.findByIdOrThrow(materialId);
+    const updated = current.discontinue(now);
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.materials.save(updated);
+    });
+
+    return MaterialViewMapper.toView(updated);
+  }
+
+  async reactivate(materialId: string): Promise<MaterialView> {
+    const now = new Date();
+    const current = await this.findByIdOrThrow(materialId);
+    const updated = current.reactivate(now);
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.materials.save(updated);
+    });
+
+    return MaterialViewMapper.toView(updated);
   }
 
   private resolveNewStockQuantity(currentQuantity: number, input: StockEntryInput): number {

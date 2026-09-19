@@ -8,3 +8,6 @@ export class CompositeProductNotFoundError extends DomainError {}
 
 /** Raised when a `BillOfMaterials` item references a `Material` that does not exist. */
 export class UnknownMaterialReferenceError extends DomainError {}
+
+/** Raised when a `BillOfMaterials` item references a `Material` that is discontinued — see CLAUDE.md section 9. */
+export class InactiveMaterialReferenceError extends DomainError {}

@@ -20,16 +20,17 @@ model User {
 // --- Materials -----------------------------------------------------------
 
 model Material {
-  id                String   @id @default(uuid())
+  id                String    @id @default(uuid())
   name              String
   description       String?
   imageUrl          String?
-  packageCost       Decimal  @db.Decimal(12, 2)
-  packageQuantity   Decimal  @db.Decimal(12, 3)
-  stockQuantity     Decimal  @db.Decimal(12, 3)
-  minimumStockAlert Decimal  @db.Decimal(12, 3)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  packageCost       Decimal   @db.Decimal(12, 2)
+  packageQuantity   Decimal   @db.Decimal(12, 3)
+  stockQuantity     Decimal   @db.Decimal(12, 3)
+  minimumStockAlert Decimal   @db.Decimal(12, 3)
+  discontinuedAt    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   priceHistory   MaterialPriceHistory[]
   bomItems       BomItem[]
@@ -56,21 +57,22 @@ model MaterialPriceHistory {
   origin        PriceChangeOrigin
   changedAt     DateTime          @default(now())
 
-  material Material @relation(fields: [materialId], references: [id])
+  material Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
 }
 
 // --- Composite products & bill of materials -------------------------------
 
 model CompositeProduct {
-  id                   String   @id @default(uuid())
+  id                   String    @id @default(uuid())
   name                 String
   description          String?
   imageUrl             String?
-  fixedOperationalCost Decimal  @db.Decimal(12, 2)
-  profitMargin         Decimal  @db.Decimal(5, 2)
-  manualPrice          Decimal? @db.Decimal(12, 2)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  fixedOperationalCost Decimal   @db.Decimal(12, 2)
+  profitMargin         Decimal   @db.Decimal(5, 2)
+  manualPrice          Decimal?  @db.Decimal(12, 2)
+  discontinuedAt       DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   billOfMaterials BillOfMaterials?
   saleItems       SaleItem[]
@@ -80,7 +82,7 @@ model BillOfMaterials {
   id                 String @id @default(uuid())
   compositeProductId String @unique
 
-  compositeProduct CompositeProduct @relation(fields: [compositeProductId], references: [id])
+  compositeProduct CompositeProduct @relation(fields: [compositeProductId], references: [id], onDelete: Restrict)
   items            BomItem[]
 }
 
@@ -90,8 +92,8 @@ model BomItem {
   materialId        String
   quantity          Decimal @db.Decimal(12, 3)
 
-  billOfMaterials BillOfMaterials @relation(fields: [billOfMaterialsId], references: [id])
-  material        Material        @relation(fields: [materialId], references: [id])
+  billOfMaterials BillOfMaterials @relation(fields: [billOfMaterialsId], references: [id], onDelete: Restrict)
+  material        Material        @relation(fields: [materialId], references: [id], onDelete: Restrict)
 }
 
 // --- Sales -----------------------------------------------------------------
@@ -128,14 +130,17 @@ model SaleItem {
   saleId             String
   // A SaleItem references either a CompositeProduct or a loose Material,
   // never both and never neither — enforced in the domain entity, not here.
+  // The FK stays for navigation/traceability only — every read displays the
+  // snapshot below, never the referenced entity's current name or price.
   compositeProductId String?
   materialId         String?
   quantity           Decimal @db.Decimal(12, 3)
-  unitPrice          Decimal @db.Decimal(12, 2)
+  itemNameSnapshot   String
+  unitPriceSnapshot  Decimal @db.Decimal(12, 2)
 
   sale             Sale              @relation(fields: [saleId], references: [id])
-  compositeProduct CompositeProduct? @relation(fields: [compositeProductId], references: [id])
-  material         Material?         @relation(fields: [materialId], references: [id])
+  compositeProduct CompositeProduct? @relation(fields: [compositeProductId], references: [id], onDelete: Restrict)
+  material         Material?         @relation(fields: [materialId], references: [id], onDelete: Restrict)
 }
 
 // Records, per sale, exactly how much of each Material was debited from
@@ -148,7 +153,7 @@ model StockMovementSnapshot {
   createdAt       DateTime @default(now())
 
   sale     Sale     @relation(fields: [saleId], references: [id])
-  material Material @relation(fields: [materialId], references: [id])
+  material Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
 }
 
 // --- Purchases ---------------------------------------------------------
@@ -181,7 +186,7 @@ model PurchaseItem {
   isStockMaterial  Boolean @default(false)
 
   purchase Purchase  @relation(fields: [purchaseId], references: [id])
-  material Material? @relation(fields: [materialId], references: [id])
+  material Material? @relation(fields: [materialId], references: [id], onDelete: Restrict)
 }
 
 // --- NFC-e import --------------------------------------------------------

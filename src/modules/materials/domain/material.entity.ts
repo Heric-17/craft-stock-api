@@ -13,6 +13,7 @@ export interface MaterialProps {
   /** Current balance in stock, in fractional consumption units. */
   stockQuantity: number;
   minimumStockAlert: number;
+  discontinuedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -26,6 +27,7 @@ export class Material {
   readonly packageQuantity: number;
   readonly stockQuantity: number;
   readonly minimumStockAlert: number;
+  readonly discontinuedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 
@@ -60,8 +62,13 @@ export class Material {
     this.packageQuantity = props.packageQuantity;
     this.stockQuantity = props.stockQuantity;
     this.minimumStockAlert = props.minimumStockAlert;
+    this.discontinuedAt = props.discontinuedAt;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
+  }
+
+  get isActive(): boolean {
+    return this.discontinuedAt === null;
   }
 
   /**
@@ -103,6 +110,22 @@ export class Material {
     return this.update({ packageCost: reportedPackageCost }, updatedAt);
   }
 
+  discontinue(discontinuedAt: Date): Material {
+    if (!this.isActive) {
+      throw new InvalidMaterialError(`Material ${this.id} is already discontinued.`);
+    }
+
+    return this.update({ discontinuedAt }, discontinuedAt);
+  }
+
+  reactivate(updatedAt: Date): Material {
+    if (this.isActive) {
+      throw new InvalidMaterialError(`Material ${this.id} is already active.`);
+    }
+
+    return this.update({ discontinuedAt: null }, updatedAt);
+  }
+
   private toProps(): MaterialProps {
     return {
       id: this.id,
@@ -113,6 +136,7 @@ export class Material {
       packageQuantity: this.packageQuantity,
       stockQuantity: this.stockQuantity,
       minimumStockAlert: this.minimumStockAlert,
+      discontinuedAt: this.discontinuedAt,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };

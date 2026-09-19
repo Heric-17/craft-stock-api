@@ -81,6 +81,8 @@ export class CompositeProductViewMapper {
             }
           : null,
       billOfMaterials: billOfMaterialsView,
+      isActive: product.isActive,
+      discontinuedAt: product.discontinuedAt,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
     };

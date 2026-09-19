@@ -17,6 +17,7 @@ export class MaterialMapper {
       packageQuantity: row.packageQuantity.toNumber(),
       stockQuantity: row.stockQuantity.toNumber(),
       minimumStockAlert: row.minimumStockAlert.toNumber(),
+      discontinuedAt: row.discontinuedAt,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });
@@ -32,6 +33,7 @@ export class MaterialMapper {
       packageQuantity: new Prisma.Decimal(material.packageQuantity),
       stockQuantity: new Prisma.Decimal(material.stockQuantity),
       minimumStockAlert: new Prisma.Decimal(material.minimumStockAlert),
+      discontinuedAt: material.discontinuedAt,
       createdAt: material.createdAt,
       updatedAt: material.updatedAt,
     };

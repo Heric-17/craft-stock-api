@@ -40,7 +40,14 @@ export class PrismaMaterialRepository implements MaterialRepository {
     });
   }
 
+  /**
+   * `MaterialPriceHistory` belongs to this Material's own aggregate — deleting
+   * a Material must cascade to it explicitly, since the FK is `onDelete:
+   * Restrict` (CLAUDE.md section 9), not `Cascade`. Callers must have already
+   * checked `countReferences` returns zero: this method does not re-check.
+   */
   async delete(id: string): Promise<void> {
+    await this.prisma.materialPriceHistory.deleteMany({ where: { materialId: id } });
     await this.prisma.material.delete({ where: { id } });
   }
 
@@ -57,5 +64,16 @@ export class PrismaMaterialRepository implements MaterialRepository {
     });
 
     return rows.map((row) => MaterialPriceHistoryMapper.toDomain(row));
+  }
+
+  async countReferences(materialId: string): Promise<number> {
+    const [bomItems, saleItems, purchaseItems, stockMovements] = await Promise.all([
+      this.prisma.bomItem.count({ where: { materialId } }),
+      this.prisma.saleItem.count({ where: { materialId } }),
+      this.prisma.purchaseItem.count({ where: { materialId } }),
+      this.prisma.stockMovementSnapshot.count({ where: { materialId } }),
+    ]);
+
+    return bomItems + saleItems + purchaseItems + stockMovements;
   }
 }

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -43,11 +44,13 @@ export class MaterialsController {
 
   @Get()
   list(@Query() query: SearchMaterialsQueryDto): Promise<MaterialView[]> {
+    const includeDiscontinued = query.includeDiscontinued === 'true';
+
     if (query.name !== undefined) {
-      return this.materialsService.search(query.name);
+      return this.materialsService.search(query.name, includeDiscontinued);
     }
 
-    return this.materialsService.list();
+    return this.materialsService.list(includeDiscontinued);
   }
 
   @Patch(':id')
@@ -86,5 +89,28 @@ export class MaterialsController {
   @Get(':id/price-history')
   getPriceHistory(@Param('id') id: string): Promise<MaterialPriceHistoryView[]> {
     return this.materialsService.getPriceHistory(id);
+  }
+
+  /**
+   * Physical delete — allowed only when nothing references this Material.
+   * Otherwise the service throws `EntityInUseError` (422); discontinue it
+   * instead. See CLAUDE.md section 9.
+   */
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async delete(@Param('id') id: string): Promise<void> {
+    await this.materialsService.delete(id);
+  }
+
+  @Post(':id/discontinue')
+  @HttpCode(HttpStatus.OK)
+  discontinue(@Param('id') id: string): Promise<MaterialView> {
+    return this.materialsService.discontinue(id);
+  }
+
+  @Post(':id/reactivate')
+  @HttpCode(HttpStatus.OK)
+  reactivate(@Param('id') id: string): Promise<MaterialView> {
+    return this.materialsService.reactivate(id);
   }
 }

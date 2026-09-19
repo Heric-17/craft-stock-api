@@ -13,6 +13,7 @@ function build(
     fixedOperationalCost: Money.fromDecimalString('2.50'),
     profitMargin: 35,
     manualPrice: null,
+    discontinuedAt: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
@@ -53,6 +54,52 @@ describe('CompositeProduct', () => {
       const updated = product.update({ manualPrice: null }, new Date('2026-02-01T00:00:00Z'));
 
       expect(updated.manualPrice).toBeNull();
+    });
+  });
+
+  describe('isActive / discontinue / reactivate', () => {
+    it('is active by default (discontinuedAt is null)', () => {
+      const product = build();
+
+      expect(product.isActive).toBe(true);
+    });
+
+    it('discontinue sets discontinuedAt and flips isActive', () => {
+      const product = build();
+      const discontinuedAt = new Date('2026-02-01T00:00:00Z');
+
+      const discontinued = product.discontinue(discontinuedAt);
+
+      expect(discontinued.isActive).toBe(false);
+      expect(discontinued.discontinuedAt).toEqual(discontinuedAt);
+      expect(discontinued).not.toBe(product);
+    });
+
+    it('rejects discontinuing an already discontinued CompositeProduct', () => {
+      const product = build({ discontinuedAt: new Date('2026-01-15T00:00:00Z') });
+
+      expect(() => product.discontinue(new Date('2026-02-01T00:00:00Z'))).toThrow(
+        InvalidCompositeProductError,
+      );
+    });
+
+    it('reactivate clears discontinuedAt and flips isActive back', () => {
+      const product = build({ discontinuedAt: new Date('2026-01-15T00:00:00Z') });
+      const updatedAt = new Date('2026-02-01T00:00:00Z');
+
+      const reactivated = product.reactivate(updatedAt);
+
+      expect(reactivated.isActive).toBe(true);
+      expect(reactivated.discontinuedAt).toBeNull();
+      expect(reactivated.updatedAt).toEqual(updatedAt);
+    });
+
+    it('rejects reactivating a CompositeProduct that is already active', () => {
+      const product = build();
+
+      expect(() => product.reactivate(new Date('2026-02-01T00:00:00Z'))).toThrow(
+        InvalidCompositeProductError,
+      );
     });
   });
 });

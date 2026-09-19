@@ -12,6 +12,7 @@ export interface CompositeProductProps {
   profitMargin: number;
   /** Practiced price, optional. When set, overrides the suggested price. */
   manualPrice: Money | null;
+  discontinuedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +25,7 @@ export class CompositeProduct {
   readonly fixedOperationalCost: Money;
   readonly profitMargin: number;
   readonly manualPrice: Money | null;
+  readonly discontinuedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 
@@ -45,8 +47,13 @@ export class CompositeProduct {
     this.fixedOperationalCost = props.fixedOperationalCost;
     this.profitMargin = props.profitMargin;
     this.manualPrice = props.manualPrice;
+    this.discontinuedAt = props.discontinuedAt;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
+  }
+
+  get isActive(): boolean {
+    return this.discontinuedAt === null;
   }
 
   /** Immutable edit: applies `changes` on top of the current state. */
@@ -55,6 +62,24 @@ export class CompositeProduct {
     updatedAt: Date,
   ): CompositeProduct {
     return new CompositeProduct({ ...this.toProps(), ...changes, updatedAt });
+  }
+
+  discontinue(discontinuedAt: Date): CompositeProduct {
+    if (!this.isActive) {
+      throw new InvalidCompositeProductError(
+        `CompositeProduct ${this.id} is already discontinued.`,
+      );
+    }
+
+    return this.update({ discontinuedAt }, discontinuedAt);
+  }
+
+  reactivate(updatedAt: Date): CompositeProduct {
+    if (this.isActive) {
+      throw new InvalidCompositeProductError(`CompositeProduct ${this.id} is already active.`);
+    }
+
+    return this.update({ discontinuedAt: null }, updatedAt);
   }
 
   private toProps(): CompositeProductProps {
@@ -66,6 +91,7 @@ export class CompositeProduct {
       fixedOperationalCost: this.fixedOperationalCost,
       profitMargin: this.profitMargin,
       manualPrice: this.manualPrice,
+      discontinuedAt: this.discontinuedAt,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };

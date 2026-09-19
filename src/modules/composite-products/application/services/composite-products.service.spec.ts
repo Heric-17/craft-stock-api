@@ -9,7 +9,12 @@ import { InMemoryMaterialRepository } from '../../../materials/infrastructure/pe
 import { InMemoryPurchaseRepository } from '../../../purchases/infrastructure/persistence/in-memory-purchase.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
-import { UnknownMaterialReferenceError } from '../../domain/composite-product.error';
+import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
+import {
+  InactiveMaterialReferenceError,
+  InvalidCompositeProductError,
+  UnknownMaterialReferenceError,
+} from '../../domain/composite-product.error';
 import { InMemoryCompositeProductRepository } from '../../infrastructure/persistence/in-memory-composite-product.repository';
 import type { CreateCompositeProductInput } from '../dto/composite-products.dto';
 import { CompositeProductsService } from './composite-products.service';
@@ -55,6 +60,7 @@ function buildMaterial(
     packageQuantity: 1000,
     stockQuantity: 1000,
     minimumStockAlert: 100,
+    discontinuedAt: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -140,6 +146,54 @@ describe('CompositeProductsService', () => {
         ),
       ).rejects.toThrow(UnknownMaterialReferenceError);
     });
+
+    it('rejects a BillOfMaterials item referencing a discontinued Material', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial({ discontinuedAt: new Date('2026-01-10T00:00:00Z') });
+      await materials.save(flour);
+
+      await expect(
+        service.create(
+          buildCreateInput({ billOfMaterials: [{ materialId: flour.id, quantity: 120 }] }),
+        ),
+      ).rejects.toThrow(InactiveMaterialReferenceError);
+    });
+  });
+
+  describe('update', () => {
+    it('rejects replacing the BillOfMaterials with a discontinued Material', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial();
+      await materials.save(flour);
+      const created = await service.create(
+        buildCreateInput({ billOfMaterials: [{ materialId: flour.id, quantity: 120 }] }),
+      );
+
+      const discontinuedFlour = flour.discontinue(new Date('2026-01-10T00:00:00Z'));
+      await materials.save(discontinuedFlour);
+
+      await expect(
+        service.update(created.id, {
+          billOfMaterials: [{ materialId: flour.id, quantity: 200 }],
+        }),
+      ).rejects.toThrow(InactiveMaterialReferenceError);
+    });
+
+    it('keeps an existing BillOfMaterials reference to a Material discontinued after the fact readable', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial();
+      await materials.save(flour);
+      const created = await service.create(
+        buildCreateInput({ billOfMaterials: [{ materialId: flour.id, quantity: 120 }] }),
+      );
+
+      await materials.save(flour.discontinue(new Date('2026-01-10T00:00:00Z')));
+
+      const view = await service.update(created.id, { profitMargin: 40 });
+
+      expect(view.billOfMaterials).toHaveLength(1);
+      expect(view.billOfMaterials[0].materialId).toBe(flour.id);
+    });
   });
 
   describe('findById', () => {
@@ -172,16 +226,93 @@ describe('CompositeProductsService', () => {
 
       expect(views).toHaveLength(2);
     });
+
+    it('excludes discontinued products by default', async () => {
+      const { service } = buildService();
+      const active = await service.create(buildCreateInput({ name: 'Bolo de cenoura' }));
+      const discontinued = await service.create(buildCreateInput({ name: 'Cupcake' }));
+      await service.discontinue(discontinued.id);
+
+      const views = await service.list();
+
+      expect(views.map((view) => view.id)).toEqual([active.id]);
+    });
+
+    it('includes discontinued products when includeDiscontinued is true', async () => {
+      const { service } = buildService();
+      const created = await service.create(buildCreateInput());
+      await service.discontinue(created.id);
+
+      const views = await service.list(true);
+
+      expect(views.map((view) => view.id)).toEqual([created.id]);
+    });
   });
 
   describe('delete', () => {
-    it('removes the product', async () => {
+    it('physically deletes a product with no references', async () => {
       const { service, compositeProducts } = buildService();
       const created = await service.create(buildCreateInput());
 
       await service.delete(created.id);
 
       expect(await compositeProducts.findById(created.id)).toBeNull();
+    });
+
+    it('throws EntityInUseError instead of deleting a product that has sales', async () => {
+      const { service, compositeProducts } = buildService();
+      const created = await service.create(buildCreateInput());
+      compositeProducts.setReferenceCount(created.id, 2);
+
+      await expect(service.delete(created.id)).rejects.toThrow(EntityInUseError);
+      expect(await compositeProducts.findById(created.id)).not.toBeNull();
+    });
+  });
+
+  describe('discontinue / reactivate', () => {
+    it('discontinues an active product', async () => {
+      const { service } = buildService();
+      const created = await service.create(buildCreateInput());
+
+      const discontinued = await service.discontinue(created.id);
+
+      expect(discontinued.isActive).toBe(false);
+      expect(discontinued.discontinuedAt).not.toBeNull();
+    });
+
+    it('a discontinued product stays readable with its indicators after being discontinued', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial();
+      await materials.save(flour);
+      const created = await service.create(
+        buildCreateInput({ billOfMaterials: [{ materialId: flour.id, quantity: 120 }] }),
+      );
+
+      await service.discontinue(created.id);
+      const view = await service.findById(created.id);
+
+      expect(view.name).toBe('Bolo de cenoura');
+      expect(view.isActive).toBe(false);
+      expect(view.materialsCost).toBe('1.20');
+    });
+
+    it('reactivates a discontinued product', async () => {
+      const { service } = buildService();
+      const created = await service.create(buildCreateInput());
+      await service.discontinue(created.id);
+
+      const reactivated = await service.reactivate(created.id);
+
+      expect(reactivated.isActive).toBe(true);
+      expect(reactivated.discontinuedAt).toBeNull();
+    });
+
+    it('rejects discontinuing an already discontinued product', async () => {
+      const { service } = buildService();
+      const created = await service.create(buildCreateInput());
+      await service.discontinue(created.id);
+
+      await expect(service.discontinue(created.id)).rejects.toThrow(InvalidCompositeProductError);
     });
   });
 });

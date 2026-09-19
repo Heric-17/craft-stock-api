@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 
 import type {
@@ -16,6 +17,7 @@ import type {
 } from '../application/dto/composite-products.dto';
 import { CompositeProductsService } from '../application/services/composite-products.service';
 import { CreateCompositeProductDto } from './dto/create-composite-product.dto';
+import { ListCompositeProductsQueryDto } from './dto/list-composite-products-query.dto';
 import { UpdateCompositeProductDto } from './dto/update-composite-product.dto';
 
 @Controller('composite-products')
@@ -40,8 +42,8 @@ export class CompositeProductsController {
   }
 
   @Get()
-  list(): Promise<CompositeProductView[]> {
-    return this.compositeProductsService.list();
+  list(@Query() query: ListCompositeProductsQueryDto): Promise<CompositeProductView[]> {
+    return this.compositeProductsService.list(query.includeDiscontinued === 'true');
   }
 
   @Get(':id')
@@ -73,9 +75,26 @@ export class CompositeProductsController {
     return this.compositeProductsService.update(id, input);
   }
 
+  /**
+   * Physical delete — allowed only when no `SaleItem` references this
+   * CompositeProduct. Otherwise the service throws `EntityInUseError` (422);
+   * discontinue it instead. See CLAUDE.md section 9.
+   */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param('id') id: string): Promise<void> {
     await this.compositeProductsService.delete(id);
+  }
+
+  @Post(':id/discontinue')
+  @HttpCode(HttpStatus.OK)
+  discontinue(@Param('id') id: string): Promise<CompositeProductView> {
+    return this.compositeProductsService.discontinue(id);
+  }
+
+  @Post(':id/reactivate')
+  @HttpCode(HttpStatus.OK)
+  reactivate(@Param('id') id: string): Promise<CompositeProductView> {
+    return this.compositeProductsService.reactivate(id);
   }
 }

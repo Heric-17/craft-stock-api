@@ -16,6 +16,7 @@ export class CompositeProductMapper {
       fixedOperationalCost: toDomainMoney(row.fixedOperationalCost),
       profitMargin: row.profitMargin.toNumber(),
       manualPrice: row.manualPrice ? toDomainMoney(row.manualPrice) : null,
+      discontinuedAt: row.discontinuedAt,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });
@@ -30,6 +31,7 @@ export class CompositeProductMapper {
       fixedOperationalCost: toPersistenceDecimal(product.fixedOperationalCost),
       profitMargin: new Prisma.Decimal(product.profitMargin),
       manualPrice: product.manualPrice ? toPersistenceDecimal(product.manualPrice) : null,
+      discontinuedAt: product.discontinuedAt,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
     };

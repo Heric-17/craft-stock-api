@@ -15,6 +15,8 @@ export class MaterialViewMapper {
       minimumStockAlert: material.minimumStockAlert,
       unitCost: material.unitCost.toDecimalString(),
       lowStock: material.isBelowMinimumStock,
+      isActive: material.isActive,
+      discontinuedAt: material.discontinuedAt,
       createdAt: material.createdAt,
       updatedAt: material.updatedAt,
     };
