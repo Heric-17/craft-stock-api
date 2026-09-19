@@ -124,4 +124,13 @@ export class Money {
   toNumber(): number {
     return this.cents / 100;
   }
+
+  toDecimalString(): string {
+    const sign = this.cents < 0 ? '-' : '';
+    const abs = Math.abs(this.cents);
+    const units = Math.trunc(abs / 100);
+    const remainderCents = abs % 100;
+
+    return `${sign}${units}.${String(remainderCents).padStart(2, '0')}`;
+  }
 }

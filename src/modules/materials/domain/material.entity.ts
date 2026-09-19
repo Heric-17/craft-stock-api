@@ -78,4 +78,43 @@ export class Material {
   get isBelowMinimumStock(): boolean {
     return this.stockQuantity <= this.minimumStockAlert;
   }
+
+  /** Immutable edit: applies `changes` on top of the current state. */
+  update(changes: Partial<Omit<MaterialProps, 'id' | 'createdAt'>>, updatedAt: Date): Material {
+    return new Material({ ...this.toProps(), ...changes, updatedAt });
+  }
+
+  withStockQuantity(newStockQuantity: number, updatedAt: Date): Material {
+    return this.update({ stockQuantity: newStockQuantity }, updatedAt);
+  }
+
+  /**
+   * Applies a `packageCost` reported by an imported invoice. Deliberately
+   * replaces the current cost only when the reported one is strictly
+   * greater: a promotional, one-off price on a single note must not pull
+   * down the cost used to plan future restocking. Returns the same instance,
+   * unchanged, when the reported cost is not an increase.
+   */
+  receiveInvoicePackageCost(reportedPackageCost: Money, updatedAt: Date): Material {
+    if (!reportedPackageCost.isGreaterThan(this.packageCost)) {
+      return this;
+    }
+
+    return this.update({ packageCost: reportedPackageCost }, updatedAt);
+  }
+
+  private toProps(): MaterialProps {
+    return {
+      id: this.id,
+      name: this.name,
+      description: this.description,
+      imageUrl: this.imageUrl,
+      packageCost: this.packageCost,
+      packageQuantity: this.packageQuantity,
+      stockQuantity: this.stockQuantity,
+      minimumStockAlert: this.minimumStockAlert,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+    };
+  }
 }

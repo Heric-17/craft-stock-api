@@ -119,4 +119,22 @@ describe('Money', () => {
       expect(Money.fromCents(5).toNumber()).toBe(0.05);
     });
   });
+
+  describe('toDecimalString', () => {
+    it('renders a positive amount with two fractional digits', () => {
+      expect(Money.fromCents(1990).toDecimalString()).toBe('19.90');
+    });
+
+    it('pads a sub-ten cents remainder', () => {
+      expect(Money.fromCents(5).toDecimalString()).toBe('0.05');
+    });
+
+    it('renders a negative amount with the sign in front', () => {
+      expect(Money.fromCents(-345).toDecimalString()).toBe('-3.45');
+    });
+
+    it('renders zero', () => {
+      expect(Money.zero().toDecimalString()).toBe('0.00');
+    });
+  });
 });

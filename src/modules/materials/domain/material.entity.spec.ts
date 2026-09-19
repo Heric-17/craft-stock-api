@@ -83,4 +83,78 @@ describe('Material', () => {
   it('rejects an empty name', () => {
     expect(() => new Material(buildProps({ name: '  ' }))).toThrow(InvalidMaterialError);
   });
+
+  describe('update', () => {
+    it('applies the given changes and bumps updatedAt', () => {
+      const material = new Material(
+        buildProps({ name: 'Farinha', updatedAt: new Date('2026-01-01T00:00:00Z') }),
+      );
+      const updatedAt = new Date('2026-02-01T00:00:00Z');
+
+      const updated = material.update({ name: 'Farinha de trigo especial' }, updatedAt);
+
+      expect(updated.name).toBe('Farinha de trigo especial');
+      expect(updated.updatedAt).toEqual(updatedAt);
+      expect(updated).not.toBe(material);
+    });
+
+    it('leaves fields not present in changes untouched', () => {
+      const material = new Material(buildProps({ stockQuantity: 500 }));
+
+      const updated = material.update({ name: 'Novo nome' }, new Date());
+
+      expect(updated.stockQuantity).toBe(500);
+    });
+
+    it('still enforces Material invariants on the resulting state', () => {
+      const material = new Material(buildProps());
+
+      expect(() => material.update({ stockQuantity: -1 }, new Date())).toThrow(
+        InvalidMaterialError,
+      );
+    });
+  });
+
+  describe('withStockQuantity', () => {
+    it('replaces the stock quantity and bumps updatedAt', () => {
+      const material = new Material(buildProps({ stockQuantity: 100 }));
+      const updatedAt = new Date('2026-03-01T00:00:00Z');
+
+      const updated = material.withStockQuantity(150, updatedAt);
+
+      expect(updated.stockQuantity).toBe(150);
+      expect(updated.updatedAt).toEqual(updatedAt);
+    });
+  });
+
+  describe('receiveInvoicePackageCost', () => {
+    it('replaces packageCost when the reported value is greater than the current one', () => {
+      const material = new Material(buildProps({ packageCost: Money.fromDecimalString('10.00') }));
+      const updatedAt = new Date('2026-04-01T00:00:00Z');
+
+      const updated = material.receiveInvoicePackageCost(
+        Money.fromDecimalString('12.00'),
+        updatedAt,
+      );
+
+      expect(updated.packageCost.equals(Money.fromDecimalString('12.00'))).toBe(true);
+      expect(updated.updatedAt).toEqual(updatedAt);
+    });
+
+    it('keeps the current packageCost, and the same instance, when the reported value is not greater', () => {
+      const material = new Material(buildProps({ packageCost: Money.fromDecimalString('10.00') }));
+
+      const sameValue = material.receiveInvoicePackageCost(
+        Money.fromDecimalString('10.00'),
+        new Date(),
+      );
+      const lowerValue = material.receiveInvoicePackageCost(
+        Money.fromDecimalString('8.00'),
+        new Date(),
+      );
+
+      expect(sameValue).toBe(material);
+      expect(lowerValue).toBe(material);
+    });
+  });
 });
