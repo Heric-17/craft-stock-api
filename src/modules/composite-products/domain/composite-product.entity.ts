@@ -48,4 +48,26 @@ export class CompositeProduct {
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }
+
+  /** Immutable edit: applies `changes` on top of the current state. */
+  update(
+    changes: Partial<Omit<CompositeProductProps, 'id' | 'createdAt'>>,
+    updatedAt: Date,
+  ): CompositeProduct {
+    return new CompositeProduct({ ...this.toProps(), ...changes, updatedAt });
+  }
+
+  private toProps(): CompositeProductProps {
+    return {
+      id: this.id,
+      name: this.name,
+      description: this.description,
+      imageUrl: this.imageUrl,
+      fixedOperationalCost: this.fixedOperationalCost,
+      profitMargin: this.profitMargin,
+      manualPrice: this.manualPrice,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+    };
+  }
 }

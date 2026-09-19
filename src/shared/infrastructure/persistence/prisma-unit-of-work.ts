@@ -18,14 +18,6 @@ export class PrismaUnitOfWork implements UnitOfWork {
     return this.prisma.$transaction((tx) => work(this.buildContext(tx)));
   }
 
-  /**
-   * Wires repositories to the transactional client handed out by
-   * `$transaction`. This construction is `UnitOfWork`'s own job (CLAUDE.md
-   * 6.5), distinct from the Factory pattern in 6.3: a DI container has no way
-   * to hand out an instance pre-bound to one specific, short-lived
-   * transaction client, so building it here — once per transaction — is the
-   * correct place, not a container bypass.
-   */
   private buildContext(tx: Prisma.TransactionClient): RepositoryContext {
     return {
       materials: new PrismaMaterialRepository(tx),
