@@ -1,3 +1,7 @@
+import {
+  toDomainMoney,
+  toPersistenceDecimal,
+} from '../../../../../shared/infrastructure/persistence/money.mapper';
 import type { PurchaseModel } from '../../../../../shared/infrastructure/prisma/generated/models';
 import { Prisma } from '../../../../../shared/infrastructure/prisma/generated/client';
 import { Purchase } from '../../../domain/purchase.entity';
@@ -9,6 +13,9 @@ export class PurchaseMapper {
       purchaseDate: row.purchaseDate,
       accessKey: row.accessKey,
       rawInvoiceData: row.rawInvoiceData as Record<string, unknown> | null,
+      grossTotal: toDomainMoney(row.grossTotal),
+      discountTotal: toDomainMoney(row.discountTotal),
+      netTotal: toDomainMoney(row.netTotal),
       createdAt: row.createdAt,
     });
   }
@@ -22,6 +29,9 @@ export class PurchaseMapper {
         purchase.rawInvoiceData === null
           ? Prisma.JsonNull
           : (purchase.rawInvoiceData as Prisma.InputJsonValue),
+      grossTotal: toPersistenceDecimal(purchase.grossTotal),
+      discountTotal: toPersistenceDecimal(purchase.discountTotal),
+      netTotal: toPersistenceDecimal(purchase.netTotal),
       createdAt: purchase.createdAt,
     };
   }

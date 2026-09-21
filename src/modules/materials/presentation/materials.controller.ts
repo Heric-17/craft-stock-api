@@ -94,7 +94,7 @@ export class MaterialsController {
   /**
    * Physical delete — allowed only when nothing references this Material.
    * Otherwise the service throws `EntityInUseError` (422); discontinue it
-   * instead. See CLAUDE.md section 9.
+   * instead.
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)

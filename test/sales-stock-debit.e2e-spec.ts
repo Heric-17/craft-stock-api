@@ -19,9 +19,9 @@ import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.servic
 
 /**
  * Real-Postgres integration coverage for the Sales stock debit/reversal
- * rules (CLAUDE.md section 9.2 and 11). Never mocks Prisma: every repository
- * here is the real `Prisma*Repository`, run against the Dockerized Postgres
- * from docker-compose.yml, through the real `PrismaUnitOfWork`.
+ * rules. Never mocks Prisma: every repository here is the real
+ * `Prisma*Repository`, run against the Dockerized Postgres from
+ * docker-compose.yml, through the real `PrismaUnitOfWork`.
  */
 describe('Sales stock debit (e2e)', () => {
   let app: INestApplication;

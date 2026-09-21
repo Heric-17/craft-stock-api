@@ -142,8 +142,8 @@ export class SalesService {
 
   /**
    * Case 2: the only way to change which entity a line references — remove
-   * it and add a fresh one, which gets its own new snapshot. See CLAUDE.md
-   * section 10 and the `SaleRepository.saveItems` docstring.
+   * it and add a fresh one, which gets its own new snapshot. See the
+   * `SaleRepository.saveItems` docstring.
    */
   async removeItem(saleId: string, itemId: string): Promise<SaleView> {
     const sale = await this.findSaleOrThrow(saleId);
@@ -230,10 +230,10 @@ export class SalesService {
       if (productionStatus !== sale.productionStatus) {
         if (productionStatus === 'ASSEMBLED') {
           // Debit happens only the FIRST time this Sale ever reaches
-          // ASSEMBLED (CLAUDE.md section 9.2). A later re-arrival — a
-          // duplicate call, or DELIVERED -> ASSEMBLED — must not debit stock
-          // twice; `reverseStockDebit` clears the snapshots on the way back
-          // to PENDING, so a genuine new assembly cycle debits again.
+          // ASSEMBLED. A later re-arrival — a duplicate call, or
+          // DELIVERED -> ASSEMBLED — must not debit stock twice;
+          // `reverseStockDebit` clears the snapshots on the way back to
+          // PENDING, so a genuine new assembly cycle debits again.
           const existingSnapshots = await ctx.sales.findStockMovementsBySaleId(saleId);
           if (existingSnapshots.length === 0) {
             await this.debitStock(ctx, saleId, now);
@@ -281,9 +281,9 @@ export class SalesService {
   }
 
   /**
-   * `need(material) = Σ (bomItem.quantity × saleItem.quantity) + avulso`
-   * (CLAUDE.md section 9.2), resolved against real repositories and handed
-   * to the pure `calculateMaterialNeed`. Takes a `CompositeProductRepository`
+   * `need(material) = Σ (bomItem.quantity × saleItem.quantity) + avulso`,
+   * resolved against real repositories and handed to the pure
+   * `calculateMaterialNeed`. Takes a `CompositeProductRepository`
    * parameter so it works both inside a transaction (`ctx.compositeProducts`,
    * for the stock debit) and outside one (`this.compositeProducts`, for the
    * read-only shopping list).
@@ -322,10 +322,10 @@ export class SalesService {
   }
 
   /**
-   * `debited(material) = min(need, stockQuantity)`, never negative
-   * (CLAUDE.md section 9.2). Runs entirely against `ctx`, inside the caller's
-   * transaction: reading the current `stockQuantity` here, right before
-   * writing it back, is what makes the debit correct under concurrent sales.
+   * `debited(material) = min(need, stockQuantity)`, never negative. Runs
+   * entirely against `ctx`, inside the caller's transaction: reading the
+   * current `stockQuantity` here, right before writing it back, is what
+   * makes the debit correct under concurrent sales.
    */
   private async debitStock(ctx: RepositoryContext, saleId: string, now: Date): Promise<void> {
     const items = await ctx.sales.findItemsBySaleId(saleId);
@@ -366,8 +366,7 @@ export class SalesService {
   /**
    * Reversal replays the `StockMovementSnapshot` exactly — it NEVER
    * recalculates the original need. Recalculating would manufacture stock
-   * that never existed wherever a Material was zeroed during the debit
-   * (CLAUDE.md section 9.2).
+   * that never existed wherever a Material was zeroed during the debit.
    */
   private async reverseStockDebit(
     ctx: RepositoryContext,
@@ -396,8 +395,8 @@ export class SalesService {
    * unless overridden by `manualPrice`); a loose-Material ("avulso") line is
    * priced at the Material's fractioned `unitCost`, since the domain defines
    * no separate selling price for a Material sold on its own. Both prices are
-   * frozen into the returned `SaleItem`s as `unitPriceSnapshot`, per CLAUDE.md
-   * section 10 — never recomputed on a later read.
+   * frozen into the returned `SaleItem`s as `unitPriceSnapshot` — never
+   * recomputed on a later read.
    */
   private async resolveItems(
     saleId: string,

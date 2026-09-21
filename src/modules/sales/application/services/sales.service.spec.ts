@@ -266,7 +266,7 @@ describe('SalesService', () => {
     });
   });
 
-  describe('stock debit on first ASSEMBLED (CLAUDE.md section 9.2)', () => {
+  describe('stock debit on first ASSEMBLED', () => {
     it('debits exactly what was needed when stock is sufficient', async () => {
       const { service, materials } = buildService();
       const flour = buildMaterial({ stockQuantity: 1000 });
@@ -316,7 +316,7 @@ describe('SalesService', () => {
     });
   });
 
-  describe('reversal on ASSEMBLED -> PENDING (CLAUDE.md section 9.2)', () => {
+  describe('reversal on ASSEMBLED -> PENDING', () => {
     it('returns exactly the debited quantity, not the original need, after a partial debit', async () => {
       const { service, materials, sales } = buildService();
       const flour = buildMaterial({ stockQuantity: 100 });

@@ -26,8 +26,8 @@ export class UnknownCompositeProductReferenceError extends DomainError {}
 /** Raised when a `SaleItem` references a `Material` that does not exist. */
 export class UnknownMaterialReferenceError extends DomainError {}
 
-/** Raised when a `SaleItem` references a `CompositeProduct` that is discontinued — see CLAUDE.md section 9. */
+/** Raised when a `SaleItem` references a `CompositeProduct` that is discontinued. */
 export class DiscontinuedCompositeProductReferenceError extends DomainError {}
 
-/** Raised when a `SaleItem` references a `Material` that is discontinued — see CLAUDE.md section 9. */
+/** Raised when a `SaleItem` references a `Material` that is discontinued. */
 export class DiscontinuedMaterialReferenceError extends DomainError {}

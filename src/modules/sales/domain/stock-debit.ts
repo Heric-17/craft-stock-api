@@ -11,7 +11,7 @@ export interface StockDebitResult {
    * `debited(material) = min(need, stockQuantity)` — never negative, never
    * more than what is actually in stock. When stock does not cover the need,
    * the Material is debited down to zero instead of going negative; the
-   * shortfall is simply not fulfilled here (CLAUDE.md section 9.2).
+   * shortfall is simply not fulfilled here.
    */
   debited: number;
 }

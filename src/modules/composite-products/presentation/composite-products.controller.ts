@@ -75,11 +75,6 @@ export class CompositeProductsController {
     return this.compositeProductsService.update(id, input);
   }
 
-  /**
-   * Physical delete — allowed only when no `SaleItem` references this
-   * CompositeProduct. Otherwise the service throws `EntityInUseError` (422);
-   * discontinue it instead. See CLAUDE.md section 9.
-   */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param('id') id: string): Promise<void> {

@@ -1,8 +1,3 @@
--- CLAUDE.md section 10: SaleItem carries a historical snapshot of the name
--- and unit price of whatever it sold, written once at line creation and
--- never updated afterwards, so a past sale reads correctly even after the
--- CompositeProduct/Material referenced is renamed, repriced, or discontinued.
---
 -- `unitPrice` already held exactly that value (set once at creation, never
 -- updated by any code path) — it is renamed in place so existing data is
 -- preserved exactly, not approximated.

@@ -13,13 +13,13 @@ export interface SaleRepository {
   /**
    * Upserts by id. Callers must never pass a `SaleItem` whose
    * `itemNameSnapshot`/`unitPriceSnapshot` differ from what was originally
-   * created — see CLAUDE.md section 10. The only in-place edit the domain
-   * entity exposes is `SaleItem.withQuantity`, which preserves both fields;
-   * changing the referenced entity means deleting this line and creating a
-   * new one instead.
+   * created. The only in-place edit the domain entity exposes is
+   * `SaleItem.withQuantity`, which preserves both fields; changing the
+   * referenced entity means deleting this line and creating a new one
+   * instead.
    */
   saveItems(items: SaleItem[]): Promise<void>;
-  /** Removes a single line. The only way to change which entity a line references — see CLAUDE.md section 10. */
+  /** Removes a single line. The only way to change which entity a line references. */
   deleteItem(id: string): Promise<void>;
   findStockMovementsBySaleId(saleId: string): Promise<StockMovementSnapshot[]>;
   saveStockMovements(snapshots: StockMovementSnapshot[]): Promise<void>;

@@ -10,10 +10,10 @@ export interface SaleItemProps {
   quantity: number;
   /**
    * Historical snapshot, written once at creation from the referenced
-   * CompositeProduct's `finalPrice` (or the loose Material's `unitCost`) —
-   * see CLAUDE.md section 10. The FK stays for navigation only; every read
-   * of sale history must display these snapshot fields, never the
-   * referenced entity's current name/price.
+   * CompositeProduct's `finalPrice` (or the loose Material's `unitCost`).
+   * The FK stays for navigation only; every read of sale history must
+   * display these snapshot fields, never the referenced entity's current
+   * name/price.
    */
   itemNameSnapshot: string;
   unitPriceSnapshot: Money;
@@ -65,9 +65,9 @@ export class SaleItem {
    * lone immutable-edit method on this entity — there is no generic
    * `update()` like `Material`/`CompositeProduct` have, because every other
    * field is either the id/reference (changing it means removing this line
-   * and creating another) or the snapshot (frozen forever by CLAUDE.md
-   * section 10). Keeping this narrow is what makes "nothing overwrites the
-   * snapshot after creation" true by construction, not by convention.
+   * and creating another) or the snapshot (frozen forever). Keeping this
+   * narrow is what makes "nothing overwrites the snapshot after creation"
+   * true by construction, not by convention.
    */
   withQuantity(newQuantity: number): SaleItem {
     return new SaleItem({ ...this.toProps(), quantity: newQuantity });

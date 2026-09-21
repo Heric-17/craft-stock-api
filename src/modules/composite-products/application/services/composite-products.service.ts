@@ -141,7 +141,6 @@ export class CompositeProductsService {
     return CompositeProductViewMapper.toView(product, billOfMaterials, materialsById);
   }
 
-  /** Active CompositeProducts only by default — see CLAUDE.md section 9. */
   async list(includeDiscontinued = false): Promise<CompositeProductView[]> {
     const products = await this.compositeProducts.findAll();
     const allMaterials = await this.materials.findAll();
@@ -161,11 +160,6 @@ export class CompositeProductsService {
     return views;
   }
 
-  /**
-   * Physical delete — allowed only when no `SaleItem` references this
-   * CompositeProduct (CLAUDE.md section 9). Otherwise throws
-   * `EntityInUseError`; the caller should discontinue it instead.
-   */
   async delete(productId: string): Promise<void> {
     await this.findProductOrThrow(productId);
     const referenceCount = await this.compositeProducts.countReferences(productId);
@@ -252,12 +246,6 @@ export class CompositeProductsService {
     return materialsById;
   }
 
-  /**
-   * A discontinued Material can stay in a recipe that already used it
-   * (`loadMaterialsOrThrow` never filters by `isActive`), but it cannot be
-   * added to a *new* `BomItem` — CLAUDE.md section 9. Called only from the
-   * write paths that build a fresh `BillOfMaterials`, never from reads.
-   */
   private assertMaterialsActive(materialsById: ReadonlyMap<string, Material>): void {
     for (const material of materialsById.values()) {
       if (!material.isActive) {

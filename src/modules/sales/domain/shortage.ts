@@ -13,7 +13,7 @@ export interface ShortageResult {
   shortage: number;
 }
 
-/** Backs the aggregated shopping list (CLAUDE.md Sales module, case 5): what still needs buying for a set of selected Sales. */
+/** Backs the aggregated shopping list: what still needs buying for a set of selected Sales. */
 export function calculateShortage(lines: readonly ShortageLine[]): ShortageResult[] {
   return lines.map((line) => ({
     materialId: line.materialId,

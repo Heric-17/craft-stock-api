@@ -6,7 +6,7 @@ export class SearchMaterialsQueryDto {
   @MinLength(1)
   name?: string;
 
-  /** Active Materials only by default — see CLAUDE.md section 9. */
+  /** Active Materials only by default. */
   @IsOptional()
   @IsBooleanString()
   includeDiscontinued?: string;

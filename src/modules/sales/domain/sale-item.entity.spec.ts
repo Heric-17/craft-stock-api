@@ -62,7 +62,7 @@ describe('SaleItem', () => {
     ).toThrow(InvalidSaleError);
   });
 
-  describe('historical snapshot (CLAUDE.md section 10)', () => {
+  describe('historical snapshot', () => {
     function buildItem(
       overrides: Partial<ConstructorParameters<typeof SaleItem>[0]> = {},
     ): SaleItem {
@@ -114,8 +114,8 @@ describe('SaleItem', () => {
         unitPriceSnapshot: Money.fromDecimalString('19.90'),
       });
 
-      // Discontinuing the product (CLAUDE.md section 9) never touches this
-      // SaleItem: it has its own copy of the data it needs.
+      // Discontinuing the product never touches this SaleItem: it has its
+      // own copy of the data it needs.
       expect(item.itemNameSnapshot).toBe('Bolo de cenoura');
       expect(item.unitPriceSnapshot.toDecimalString()).toBe('19.90');
     });

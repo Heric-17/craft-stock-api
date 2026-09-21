@@ -33,13 +33,6 @@ export class PrismaCompositeProductRepository implements CompositeProductReposit
     });
   }
 
-  /**
-   * `BillOfMaterials` and its `BomItem`s belong to this aggregate — deleting
-   * a `CompositeProduct` must cascade to them explicitly, since neither FK
-   * is `onDelete: Cascade` in the schema. Callers must have already checked
-   * `countReferences` returns zero (CLAUDE.md section 9): this method does
-   * not re-check `SaleItem` references.
-   */
   async delete(id: string): Promise<void> {
     await this.prisma.bomItem.deleteMany({
       where: { billOfMaterials: { compositeProductId: id } },

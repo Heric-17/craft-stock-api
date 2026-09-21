@@ -19,8 +19,8 @@ export interface BomNeedLine {
  * `bomByCompositeProductId` supplies each referenced CompositeProduct's
  * `BillOfMaterials` lines, already resolved by the caller — this function
  * does no I/O, so it serves both the single-`Sale` stock debit and the
- * multi-`Sale` shopping-list aggregation (CLAUDE.md Sales module, cases
- * "baixa de estoque" and "lista de compras agregada").
+ * multi-`Sale` shopping-list aggregation ("baixa de estoque" and
+ * "lista de compras agregada").
  */
 export function calculateMaterialNeed(
   items: readonly SaleItemNeedInput[],

@@ -26,7 +26,7 @@ export interface SaleListFilter {
   productionStatus?: ProductionStatus;
 }
 
-/** Read model for a `SaleItem`. `subtotal` is derived from the snapshot at read time, never persisted — CLAUDE.md section 10. */
+/** Read model for a `SaleItem`. `subtotal` is derived from the snapshot at read time, never persisted. */
 export interface SaleItemView {
   id: string;
   compositeProductId: string | null;
@@ -53,9 +53,8 @@ export interface SaleView {
 
 /**
  * One Material's aggregated need across a set of selected Sales — the
- * dataset the "lista de compras" screen derives its display from (CLAUDE.md
- * section 7: the backend exposes a dataset per dimension, not a ready-made
- * metric).
+ * dataset the "lista de compras" screen derives its display from. The
+ * backend exposes a dataset per dimension here, not a ready-made metric.
  */
 export interface ShoppingListLineView {
   materialId: string;
