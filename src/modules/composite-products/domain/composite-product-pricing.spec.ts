@@ -9,7 +9,7 @@ import {
 describe('calculateMaterialsCost', () => {
   it('computes the cost of a single-Material recipe', () => {
     const cost = calculateMaterialsCost([
-      { quantity: 120, unitCost: Money.fromDecimalString('0.02') },
+      { quantity: 120, packageCost: Money.fromDecimalString('20.00'), packageQuantity: 1000 },
     ]);
 
     expect(cost.toDecimalString()).toBe('2.40');
@@ -17,9 +17,9 @@ describe('calculateMaterialsCost', () => {
 
   it('sums the cost across multiple Materials', () => {
     const cost = calculateMaterialsCost([
-      { quantity: 120, unitCost: Money.fromDecimalString('0.02') },
-      { quantity: 60, unitCost: Money.fromDecimalString('0.03') },
-      { quantity: 2, unitCost: Money.fromDecimalString('1.00') },
+      { quantity: 120, packageCost: Money.fromDecimalString('20.00'), packageQuantity: 1000 },
+      { quantity: 60, packageCost: Money.fromDecimalString('30.00'), packageQuantity: 1000 },
+      { quantity: 2, packageCost: Money.fromDecimalString('1.00'), packageQuantity: 1 },
     ]);
 
     expect(cost.toDecimalString()).toBe('6.20');

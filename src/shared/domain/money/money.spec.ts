@@ -138,3 +138,63 @@ describe('Money', () => {
     });
   });
 });
+
+describe('Money.scaled', () => {
+  const money = (value: string): Money => Money.fromDecimalString(value);
+
+  /**
+   * The reason this operation exists. Chaining `dividedBy` then `times`
+   * rounds the per-unit cost to a whole cent before it is ever multiplied,
+   * and for anything measured in grams that rounding is most of the value.
+   */
+  it('keeps a fraction of a cent alive that a chained divide would destroy', () => {
+    const packageCost = money('28.00');
+
+    expect(packageCost.scaled(120, 1000).toDecimalString()).toBe('3.36');
+    // What the chained form produces, for contrast.
+    expect(packageCost.dividedBy(1000).times(120).toDecimalString()).toBe('3.60');
+  });
+
+  it('multiplies before dividing', () => {
+    expect(money('10.00').scaled(1, 3).toDecimalString()).toBe('3.33');
+    expect(money('10.00').scaled(3, 3).toDecimalString()).toBe('10.00');
+  });
+
+  it('rounds exactly once, half away from zero', () => {
+    // 500 cents x 3 / 1000 = 1.5 cents -> 2 cents.
+    expect(money('5.00').scaled(3, 1000).toDecimalString()).toBe('0.02');
+    // 500 cents x 1 / 1000 = 0.5 cents -> 1 cent.
+    expect(money('5.00').scaled(1, 1000).toDecimalString()).toBe('0.01');
+  });
+
+  it('rounds a negative amount away from zero too', () => {
+    expect(money('-5.00').scaled(3, 1000).toDecimalString()).toBe('-0.02');
+  });
+
+  it('is zero when the amount is zero', () => {
+    expect(Money.zero().scaled(120, 1000).isZero()).toBe(true);
+  });
+
+  it('accepts a fractional multiplier', () => {
+    expect(money('59.90').scaled(0.146, 1).toDecimalString()).toBe('8.75');
+  });
+
+  it('refuses a non-finite multiplier', () => {
+    expect(() => money('1.00').scaled(Number.NaN, 1)).toThrow(InvalidMoneyOperationError);
+    expect(() => money('1.00').scaled(Number.POSITIVE_INFINITY, 1)).toThrow(
+      InvalidMoneyOperationError,
+    );
+  });
+
+  it('refuses a zero or non-finite divisor', () => {
+    expect(() => money('1.00').scaled(1, 0)).toThrow(InvalidMoneyOperationError);
+    expect(() => money('1.00').scaled(1, Number.NaN)).toThrow(InvalidMoneyOperationError);
+  });
+
+  it('leaves the original untouched', () => {
+    const original = money('28.00');
+    original.scaled(120, 1000);
+
+    expect(original.toDecimalString()).toBe('28.00');
+  });
+});

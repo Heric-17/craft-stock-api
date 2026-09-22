@@ -19,4 +19,15 @@ export interface MaterialRepository {
    * not a blocking cross-aggregate reference.
    */
   countReferences(materialId: string): Promise<number>;
+  /**
+   * Counts only the `BomItem` rows referencing this Material — the subset of
+   * references whose quantities are expressed in the Material's
+   * `consumptionUnit`, and therefore the ones that lock it.
+   *
+   * Separate from `countReferences` because the two questions are different:
+   * physical deletion asks whether any history points here at all, while the
+   * unit asks whether any recipe quantity would change meaning. A past
+   * `SaleItem` blocks the first and not the second.
+   */
+  countBomItemReferences(materialId: string): Promise<number>;
 }

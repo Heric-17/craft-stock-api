@@ -8,6 +8,7 @@ import type { RepositoryContext } from '../../../../shared/domain/persistence/un
 import { InMemoryMaterialRepository } from '../../infrastructure/persistence/in-memory-material.repository';
 import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
 import {
+  ConsumptionUnitLockedError,
   InvalidMaterialError,
   InvalidStockEntryError,
   MaterialNotFoundError,
@@ -36,6 +37,7 @@ function buildCreateInput(overrides: Partial<CreateMaterialInput> = {}): CreateM
     imageUrl: null,
     packageCost: '10.00',
     packageQuantity: 1000,
+    consumptionUnit: 'GRAM',
     stockQuantity: 500,
     minimumStockAlert: 100,
     ...overrides,
@@ -114,7 +116,9 @@ describe('MaterialsService', () => {
 
       const [view] = await service.list();
 
-      expect(view.unitCost).toBe('0.01');
+      // Four places, so a cost below one cent per unit is readable instead of
+      // being rounded away.
+      expect(view.unitCost).toBe('0.0100');
       expect(view.lowStock).toBe(true);
     });
 
@@ -346,6 +350,72 @@ describe('MaterialsService', () => {
       const created = await service.create(buildCreateInput());
 
       await expect(service.reactivate(created.id)).rejects.toThrow(InvalidMaterialError);
+    });
+  });
+  describe('changeConsumptionUnit', () => {
+    it('switches the unit of a Material with no stock and no recipe using it', async () => {
+      const { service } = buildService();
+      const created = await service.create(
+        buildCreateInput({ consumptionUnit: 'UNIT', stockQuantity: 0, minimumStockAlert: 0 }),
+      );
+
+      const changed = await service.changeConsumptionUnit(created.id, 'GRAM');
+
+      expect(changed.consumptionUnit).toBe('GRAM');
+      expect(changed.consumptionUnitSymbol).toBe('g');
+    });
+
+    it('refuses while the Material still holds stock', async () => {
+      const { service } = buildService();
+      const created = await service.create(
+        buildCreateInput({ consumptionUnit: 'UNIT', stockQuantity: 12 }),
+      );
+
+      await expect(service.changeConsumptionUnit(created.id, 'GRAM')).rejects.toThrow(
+        ConsumptionUnitLockedError,
+      );
+    });
+
+    /**
+     * The `BomItem` count comes from the repository, so this is also the test
+     * that the service asks for it at all: those quantities live in another
+     * aggregate and nothing about the Material itself reveals them.
+     */
+    it('refuses while a BillOfMaterials line consumes the Material', async () => {
+      const { service, materials } = buildService();
+      const created = await service.create(
+        buildCreateInput({ consumptionUnit: 'UNIT', stockQuantity: 0, minimumStockAlert: 0 }),
+      );
+      materials.setBomItemReferenceCount(created.id, 2);
+
+      await expect(service.changeConsumptionUnit(created.id, 'GRAM')).rejects.toThrow(
+        ConsumptionUnitLockedError,
+      );
+    });
+
+    /**
+     * A `SaleItem` or a past `PurchaseItem` blocks physical deletion and not
+     * the unit: neither holds a quantity expressed in it. Only recipe lines
+     * and the stock balance do.
+     */
+    it('allows the switch when the only references are historical, not recipe lines', async () => {
+      const { service, materials } = buildService();
+      const created = await service.create(
+        buildCreateInput({ consumptionUnit: 'UNIT', stockQuantity: 0, minimumStockAlert: 0 }),
+      );
+      materials.setReferenceCount(created.id, 5);
+
+      const changed = await service.changeConsumptionUnit(created.id, 'MILLILITER');
+
+      expect(changed.consumptionUnit).toBe('MILLILITER');
+    });
+
+    it('throws MaterialNotFoundError for an unknown material', async () => {
+      const { service } = buildService();
+
+      await expect(service.changeConsumptionUnit('missing', 'GRAM')).rejects.toThrow(
+        MaterialNotFoundError,
+      );
     });
   });
 });

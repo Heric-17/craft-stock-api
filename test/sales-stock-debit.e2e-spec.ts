@@ -71,6 +71,7 @@ describe('Sales stock debit (e2e)', () => {
       imageUrl: null,
       packageCost: Money.fromDecimalString('10.00'),
       packageQuantity: 1000,
+      consumptionUnit: 'GRAM',
       stockQuantity,
       minimumStockAlert: 0,
       discontinuedAt: null,
@@ -88,7 +89,9 @@ describe('Sales stock debit (e2e)', () => {
       customerName: 'Maria',
       customerContact: null,
       paymentMethod: 'PIX',
-      items: [{ materialId, quantity }],
+      // A loose-Material line has to state its margin; these cases are about
+      // the stock debit, so they sell at cost.
+      items: [{ materialId, quantity, marginPercent: 0 }],
     });
     createdSaleIds.push(view.id);
     return view;

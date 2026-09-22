@@ -1,96 +1,134 @@
 import { Money } from '../../../shared/domain/money/money';
+import { PurchaseItem, type PurchaseItemProps } from './purchase-item.entity';
 import { InvalidPurchaseError } from './purchase.error';
-import { PurchaseItem } from './purchase-item.entity';
 
-function build(
-  overrides: Partial<ConstructorParameters<typeof PurchaseItem>[0]> = {},
-): PurchaseItem {
+const money = (value: string): Money => Money.fromDecimalString(value);
+
+function build(overrides: Partial<PurchaseItemProps> = {}): PurchaseItem {
   return new PurchaseItem({
     id: 'item-1',
     purchaseId: 'purchase-1',
+    code: '92342',
     description: 'Farinha de trigo 1kg',
     quantity: 2,
-    unitPrice: Money.fromDecimalString('10.00'),
-    grossValue: Money.fromDecimalString('20.00'),
-    netValue: Money.fromDecimalString('20.00'),
+    unit: 'UND9',
+    unitPrice: money('10.00'),
+    grossValue: money('20.00'),
+    allocatedDiscount: Money.zero(),
     isCompanyExpense: true,
-    isStockMaterial: true,
-    materialId: 'material-1',
+    isStockMaterial: false,
+    materialId: null,
     ...overrides,
   });
 }
 
 describe('PurchaseItem', () => {
-  it('derives the packageCost basis from the gross value, not from what was paid', () => {
-    const item = build({
-      grossValue: Money.fromDecimalString('20.00'),
-      netValue: Money.fromDecimalString('14.00'),
-    });
-
-    expect(item.packageCostBasis.toDecimalString()).toBe('10.00');
+  it('rejects a quantity that is not greater than zero', () => {
+    expect(() => build({ quantity: 0 })).toThrow(InvalidPurchaseError);
+    expect(() => build({ quantity: -1 })).toThrow(InvalidPurchaseError);
   });
 
-  it('keeps the same packageCost basis whatever discount the line absorbed', () => {
-    const full = build({ netValue: Money.fromDecimalString('20.00') });
-    const discounted = build({ netValue: Money.fromDecimalString('0.01') });
-
-    expect(discounted.packageCostBasis.toDecimalString()).toBe(
-      full.packageCostBasis.toDecimalString(),
-    );
+  it('rejects a negative gross value or a negative attributed discount', () => {
+    expect(() => build({ grossValue: money('-1.00') })).toThrow(InvalidPurchaseError);
+    expect(() => build({ allocatedDiscount: money('-0.01') })).toThrow(InvalidPurchaseError);
   });
 
-  it('reports the discount the line absorbed as the gap between the two sides', () => {
-    const item = build({
-      grossValue: Money.fromDecimalString('20.00'),
-      netValue: Money.fromDecimalString('17.50'),
-    });
-
-    expect(item.discountValue.toDecimalString()).toBe('2.50');
+  /** A line never takes more discount than it is worth. */
+  it('rejects an attributed discount larger than the line', () => {
+    expect(() => build({ allocatedDiscount: money('20.01') })).toThrow(InvalidPurchaseError);
   });
 
-  it('contributes what was paid, not full price, to the company expense', () => {
-    const item = build({ netValue: Money.fromDecimalString('17.50') });
-
-    expect(item.expenseValue.toDecimalString()).toBe('17.50');
-  });
-
-  it('contributes nothing to the company expense when the line is not one', () => {
-    const item = build({ isCompanyExpense: false, isStockMaterial: false, materialId: null });
-
-    expect(item.expenseValue.toDecimalString()).toBe('0.00');
-  });
-
-  it('allows a company expense that is not a stock Material, with no materialId', () => {
-    const item = build({ isCompanyExpense: true, isStockMaterial: false, materialId: null });
-
-    expect(item.materialId).toBeNull();
-  });
-
-  it('rejects a netValue above the grossValue', () => {
-    expect(() => build({ netValue: Money.fromDecimalString('20.01') })).toThrow(
-      InvalidPurchaseError,
-    );
-  });
-
-  it('rejects a negative value on either side', () => {
-    expect(() => build({ netValue: Money.fromDecimalString('-0.01') })).toThrow(
-      InvalidPurchaseError,
-    );
-  });
-
-  it('rejects a stock Material that is not a company expense', () => {
+  it('rejects being stock without also being a company expense', () => {
     expect(() =>
-      build({ isCompanyExpense: false, isStockMaterial: true, materialId: 'material-1' }),
+      build({ isStockMaterial: true, isCompanyExpense: false, materialId: 'm-1' }),
     ).toThrow(InvalidPurchaseError);
   });
 
-  it('rejects a stock Material with no materialId', () => {
+  it('requires a materialId if and only if it is a stock line', () => {
     expect(() => build({ isStockMaterial: true, materialId: null })).toThrow(InvalidPurchaseError);
-  });
-
-  it('rejects a materialId set when isStockMaterial is false', () => {
-    expect(() => build({ isStockMaterial: false, materialId: 'material-1' })).toThrow(
+    expect(() => build({ isStockMaterial: false, materialId: 'm-1' })).toThrow(
       InvalidPurchaseError,
     );
+  });
+
+  describe('netValue', () => {
+    /**
+     * Derived on every read and never a column: it is always grossValue minus
+     * allocatedDiscount, so storing it would be a third number to hold in
+     * step with the other two.
+     */
+    it('is the gross value less the attributed discount', () => {
+      expect(build({ allocatedDiscount: money('2.50') }).netValue.toDecimalString()).toBe('17.50');
+    });
+
+    it('equals the gross value when the note granted no discount', () => {
+      expect(build().netValue.toDecimalString()).toBe('20.00');
+    });
+  });
+
+  describe('packageCostBasis', () => {
+    /**
+     * Always from the gross side, in every allocation mode. A discount is a
+     * one-off event, while packageCost answers what restocking costs next
+     * time — pricing a product off a promotional price assumes the promotion
+     * lasts.
+     */
+    it('comes from the gross value even when the line absorbed a discount', () => {
+      const discounted = build({ allocatedDiscount: money('4.00') });
+
+      expect(discounted.netValue.toDecimalString()).toBe('16.00');
+      expect(discounted.packageCostBasis.toDecimalString()).toBe('10.00');
+    });
+
+    it('divides the gross value by the quantity bought', () => {
+      expect(
+        build({ quantity: 4, grossValue: money('37.96') }).packageCostBasis.toDecimalString(),
+      ).toBe('9.49');
+    });
+  });
+
+  describe('expenseValue', () => {
+    it('is the net value for a company line', () => {
+      expect(build({ allocatedDiscount: money('2.50') }).expenseValue.toDecimalString()).toBe(
+        '17.50',
+      );
+    });
+
+    /** The gross side never takes part in what the company spent. */
+    it('is zero for a personal line', () => {
+      expect(build({ isCompanyExpense: false }).expenseValue.toDecimalString()).toBe('0.00');
+    });
+  });
+
+  /**
+   * The structural guarantee: there is no setter for the classification or
+   * the attributed discount, so a line cannot be moved between eligible
+   * groups without going through `Purchase`, which reattributes.
+   */
+  it('exposes no setter for its classification or its attributed discount', () => {
+    const item = build();
+    const surface = [
+      ...Object.getOwnPropertyNames(item),
+      ...Object.getOwnPropertyNames(PurchaseItem.prototype),
+    ];
+
+    for (const forbidden of [
+      'setIsCompanyExpense',
+      'setIsStockMaterial',
+      'setAllocatedDiscount',
+      'withAllocatedDiscount',
+      'withClassification',
+    ]) {
+      expect(surface).not.toContain(forbidden);
+    }
+  });
+
+  it('round-trips through its own props', () => {
+    const item = build({ allocatedDiscount: money('1.00') });
+    const rebuilt = new PurchaseItem(item.toProps());
+
+    expect(rebuilt.netValue.toDecimalString()).toBe(item.netValue.toDecimalString());
+    expect(rebuilt.code).toBe('92342');
+    expect(rebuilt.unit).toBe('UND9');
   });
 });

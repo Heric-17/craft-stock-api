@@ -4,10 +4,16 @@ import type { SaleItem } from '../../domain/sale-item.entity';
 import type { SaleItemView, SaleView } from '../dto/sales.dto';
 
 export class SaleViewMapper {
-  /** `totalAmount` is derived here, from each item's snapshot, and never persisted. */
+  /**
+   * `totalAmount` is derived here, from each item's frozen price basis, and
+   * never persisted. It sums the already-rounded `lineTotal` of each line
+   * rather than summing exactly and rounding at the end, so the total always
+   * equals the lines shown above it — the same choice `calculateMaterialsCost`
+   * makes, for the same reason.
+   */
   static toView(sale: Sale, items: readonly SaleItem[]): SaleView {
     const itemViews = items.map((item) => SaleViewMapper.toItemView(item));
-    const totalAmount = items.reduce((total, item) => total.plus(item.subtotal), Money.zero());
+    const totalAmount = items.reduce((total, item) => total.plus(item.lineTotal), Money.zero());
 
     return {
       id: sale.id,
@@ -30,8 +36,12 @@ export class SaleViewMapper {
       materialId: item.materialId,
       quantity: item.quantity,
       itemNameSnapshot: item.itemNameSnapshot,
-      unitPriceSnapshot: item.unitPriceSnapshot.toDecimalString(),
-      subtotal: item.subtotal.toDecimalString(),
+      priceBasisAmount: item.priceBasisAmount.toDecimalString(),
+      priceBasisQuantity: item.priceBasisQuantity,
+      // Four places, display only — the client formats it, and derives no
+      // amount of money from it. `lineTotal` is the figure that adds up.
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal.toDecimalString(),
     };
   }
 }

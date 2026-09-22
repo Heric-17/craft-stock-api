@@ -10,6 +10,8 @@ export class PendingInvoiceMapper {
       status: row.status,
       attemptCount: row.attemptCount,
       lastAttemptAt: row.lastAttemptAt,
+      purchaseId: row.purchaseId,
+      lastError: row.lastError,
       createdAt: row.createdAt,
     });
   }
@@ -21,6 +23,8 @@ export class PendingInvoiceMapper {
       status: invoice.status,
       attemptCount: invoice.attemptCount,
       lastAttemptAt: invoice.lastAttemptAt,
+      purchaseId: invoice.purchaseId,
+      lastError: invoice.lastError,
       createdAt: invoice.createdAt,
     };
   }

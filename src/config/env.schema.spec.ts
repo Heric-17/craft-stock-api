@@ -11,6 +11,9 @@ describe('validateEnv', () => {
       PORT: 3000,
       LOG_LEVEL: 'info',
       DATABASE_URL: VALID_DATABASE_URL,
+      NFCE_PROVIDER: 'AUTO',
+      NFCE_IMPORT_MAX_ATTEMPTS: 3,
+      NFCE_IMPORT_RETRY_DELAY_MS: 1_000,
     });
   });
 

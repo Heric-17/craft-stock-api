@@ -19,6 +19,7 @@ import type {
   UpdateMaterialInput,
 } from '../application/dto/materials.dto';
 import { MaterialsService } from '../application/services/materials.service';
+import { ChangeConsumptionUnitDto } from './dto/consumption-unit.dto';
 import { CreateMaterialDto } from './dto/create-material.dto';
 import { SearchMaterialsQueryDto } from './dto/search-materials-query.dto';
 import { StockEntryDto } from './dto/stock-entry.dto';
@@ -37,6 +38,7 @@ export class MaterialsController {
       imageUrl: dto.imageUrl ?? null,
       packageCost: dto.packageCost,
       packageQuantity: dto.packageQuantity,
+      consumptionUnit: dto.consumptionUnit,
       stockQuantity: dto.stockQuantity,
       minimumStockAlert: dto.minimumStockAlert,
     });
@@ -65,6 +67,20 @@ export class MaterialsController {
     if (dto.minimumStockAlert !== undefined) input.minimumStockAlert = dto.minimumStockAlert;
 
     return this.materialsService.update(id, input);
+  }
+
+  /**
+   * Its own route rather than a field of `PATCH /materials/:id`: the unit is
+   * what every quantity recorded against this Material means, so it is
+   * refused (422) once there is stock on hand or a `BillOfMaterials` line
+   * consuming it.
+   */
+  @Patch(':id/consumption-unit')
+  changeConsumptionUnit(
+    @Param('id') id: string,
+    @Body() dto: ChangeConsumptionUnitDto,
+  ): Promise<MaterialView> {
+    return this.materialsService.changeConsumptionUnit(id, dto.consumptionUnit);
   }
 
   @Post(':id/stock-entries')

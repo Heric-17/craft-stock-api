@@ -19,11 +19,13 @@ import {
   COMPOSITE_PRODUCT_REPOSITORY,
   type CompositeProductRepository,
 } from '../../../composite-products/domain/repositories/composite-product.repository';
+import { consumptionUnitSymbol } from '../../../materials/domain/consumption-unit';
 import type { Material } from '../../../materials/domain/material.entity';
 import {
   MATERIAL_REPOSITORY,
   type MaterialRepository,
 } from '../../../materials/domain/repositories/material.repository';
+import { calculateLooseMaterialPriceBasis } from '../../domain/loose-material-pricing';
 import {
   calculateMaterialNeed,
   type BomNeedLine,
@@ -39,9 +41,11 @@ import {
   DiscontinuedMaterialReferenceError,
   EmptySaleError,
   InvalidSaleError,
+  MissingLooseMaterialMarginError,
   SaleItemNotFoundError,
   SaleNotEditableError,
   SaleNotFoundError,
+  UnexpectedMarginError,
   UnknownCompositeProductReferenceError,
   UnknownMaterialReferenceError,
 } from '../../domain/sale.error';
@@ -271,13 +275,21 @@ export class SalesService {
       lines.push({ materialId, needed, stockQuantity: material.stockQuantity });
     }
 
-    return calculateShortage(lines).map((result) => ({
-      materialId: result.materialId,
-      materialName: this.materialOrThrow(materialsById, result.materialId).name,
-      needed: result.needed,
-      stockQuantity: result.stockQuantity,
-      shortage: result.shortage,
-    }));
+    return calculateShortage(lines).map((result) => {
+      const material = this.materialOrThrow(materialsById, result.materialId);
+
+      return {
+        materialId: result.materialId,
+        materialName: material.name,
+        needed: result.needed,
+        stockQuantity: result.stockQuantity,
+        shortage: result.shortage,
+        // A shopping list of bare numbers is unusable: 400 of flour is 400 g,
+        // 2 of egg boxes is 2 boxes.
+        consumptionUnit: material.consumptionUnit,
+        consumptionUnitSymbol: consumptionUnitSymbol(material.consumptionUnit),
+      };
+    });
   }
 
   /**
@@ -390,13 +402,18 @@ export class SalesService {
   }
 
   /**
-   * Resolves and prices every input line: a CompositeProduct line is priced
-   * at its current `finalPrice` (materials cost + fixed cost, marked up,
-   * unless overridden by `manualPrice`); a loose-Material ("avulso") line is
-   * priced at the Material's fractioned `unitCost`, since the domain defines
-   * no separate selling price for a Material sold on its own. Both prices are
-   * frozen into the returned `SaleItem`s as `unitPriceSnapshot` — never
-   * recomputed on a later read.
+   * Resolves and prices every input line, freezing each price as the pair
+   * `priceBasisAmount` / `priceBasisQuantity` rather than as a price per
+   * unit — never recomputed on a later read.
+   *
+   * A CompositeProduct line takes its current `finalPrice` (materials cost +
+   * fixed cost, marked up, unless overridden by `manualPrice`) over a basis
+   * quantity of 1. A loose-Material ("avulso") line takes the whole
+   * package's cost marked up by the margin given for this sale, over the
+   * `packageQuantity` that package holds: the seller sets the margin on what
+   * they sell, exactly as they do for a composite product, and the package
+   * price stays undivided so that selling 120 g of a 1 kg bag costs what it
+   * should.
    */
   private async resolveItems(
     saleId: string,
@@ -408,6 +425,24 @@ export class SalesService {
       if (hasProduct === hasMaterial) {
         throw new InvalidSaleError(
           'Each Sale item must reference exactly one of compositeProductId or materialId.',
+        );
+      }
+
+      // Selling an input at cost is allowed; arriving at cost by omission is
+      // not. Nothing downstream can tell a deliberate zero margin from a
+      // margin nobody was asked for, so the choice is demanded here.
+      if (hasMaterial && input.marginPercent === undefined) {
+        throw new MissingLooseMaterialMarginError(
+          `Sale item for Material ${input.materialId as string} requires an explicit marginPercent. Send 0 to sell at cost.`,
+        );
+      }
+
+      // A CompositeProduct is priced by its own margin, already baked into
+      // `finalPrice`. Accepting a second one here and ignoring it would read
+      // as if it had been applied.
+      if (hasProduct && input.marginPercent !== undefined) {
+        throw new UnexpectedMarginError(
+          `Sale item for CompositeProduct ${input.compositeProductId as string} must not carry a marginPercent: a CompositeProduct is sold at its own finalPrice.`,
         );
       }
     }
@@ -443,10 +478,15 @@ export class SalesService {
         (bom?.items ?? []).map((item) => item.materialId),
       );
       const materialsCost = calculateMaterialsCost(
-        (bom?.items ?? []).map((item) => ({
-          quantity: item.quantity,
-          unitCost: this.materialOrThrow(bomMaterialsById, item.materialId).unitCost,
-        })),
+        (bom?.items ?? []).map((item) => {
+          const material = this.materialOrThrow(bomMaterialsById, item.materialId);
+
+          return {
+            quantity: item.quantity,
+            packageCost: material.packageCost,
+            packageQuantity: material.packageQuantity,
+          };
+        }),
       );
       const totalCost = calculateTotalCost(materialsCost, product.fixedOperationalCost);
       const suggestedPrice = calculateSuggestedPrice(totalCost, product.profitMargin);
@@ -482,7 +522,10 @@ export class SalesService {
           materialId: null,
           quantity: input.quantity,
           itemNameSnapshot: product.name,
-          unitPriceSnapshot: finalPriceByCompositeProductId.get(input.compositeProductId) as Money,
+          // A product is sold by the piece, so the basis is one piece: the
+          // frozen finalPrice over a quantity of 1.
+          priceBasisAmount: finalPriceByCompositeProductId.get(input.compositeProductId) as Money,
+          priceBasisQuantity: 1,
         });
       }
 
@@ -494,7 +537,14 @@ export class SalesService {
         materialId: input.materialId as string,
         quantity: input.quantity,
         itemNameSnapshot: material.name,
-        unitPriceSnapshot: material.unitCost,
+        // The whole package's marked-up price over what the package holds.
+        // Kept as a fraction on purpose: the price of a single gram does not
+        // fit in whole cents, so the division waits for `lineTotal`.
+        priceBasisAmount: calculateLooseMaterialPriceBasis(
+          material.packageCost,
+          input.marginPercent as number,
+        ),
+        priceBasisQuantity: material.packageQuantity,
       });
     });
   }

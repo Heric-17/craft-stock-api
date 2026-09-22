@@ -37,6 +37,7 @@ export class SalesController {
         compositeProductId: item.compositeProductId,
         materialId: item.materialId,
         quantity: item.quantity,
+        marginPercent: item.marginPercent,
       })),
     });
   }
@@ -76,6 +77,7 @@ export class SalesController {
       compositeProductId: dto.compositeProductId,
       materialId: dto.materialId,
       quantity: dto.quantity,
+      marginPercent: dto.marginPercent,
     });
   }
 

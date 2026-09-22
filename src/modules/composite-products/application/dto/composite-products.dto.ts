@@ -1,3 +1,5 @@
+import type { ConsumptionUnit } from '../../../materials/domain/consumption-unit';
+
 export interface BomItemInput {
   materialId: string;
   quantity: number;
@@ -29,11 +31,23 @@ export interface UpdateCompositeProductInput {
   billOfMaterials?: BomItemInput[];
 }
 
-/** One `BillOfMaterials` line, joined with its `Material`'s current cost and stock — the dataset a client derives its own display from. */
+/**
+ * One `BillOfMaterials` line, joined with its `Material`'s current cost and
+ * stock — the dataset a client derives its own display from.
+ *
+ * `quantity`, `stockQuantity` and `unitCost` are all in the Material's
+ * `consumptionUnit`, which is reported here with them: "120" beside a recipe
+ * line says nothing on its own.
+ */
 export interface BomItemView {
   materialId: string;
   materialName: string;
+  /** How much of the Material one produced unit consumes, in `consumptionUnit`. */
   quantity: number;
+  consumptionUnit: ConsumptionUnit;
+  /** How `consumptionUnit` is written: `g`, `ml`, `cm`, `un`. */
+  consumptionUnitSymbol: string;
+  /** Cost of one `consumptionUnit`, for display only. */
   unitCost: string;
   lineCost: string;
   stockQuantity: number;

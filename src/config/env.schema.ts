@@ -8,6 +8,16 @@ export const NODE_ENVS = ['development', 'test', 'production'] as const;
 
 const POSTGRES_URL = /^postgres(ql)?:\/\/.+/;
 
+/**
+ * Which NFC-e source the installation reads from. `AUTO` picks the scraping
+ * provider that matches the state the capture came from;
+ * `OFFICIAL_WEBSERVICE` forces the webservice for the whole installation, and
+ * is what gets switched on the day the company has a digital certificate.
+ */
+export const NFCE_PROVIDERS = ['AUTO', 'OFFICIAL_WEBSERVICE'] as const;
+
+export type NfceProvider = (typeof NFCE_PROVIDERS)[number];
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(NODE_ENVS).default('development'),
   PORT: z.coerce.number().int().positive().max(65535).default(3000),
@@ -16,6 +26,14 @@ export const envSchema = z.object({
     .string()
     .min(1, 'is required')
     .regex(POSTGRES_URL, 'must be a PostgreSQL connection string (postgresql://...)'),
+  NFCE_PROVIDER: z.enum(NFCE_PROVIDERS).default('AUTO'),
+  // The state portals drop requests under load rather than answering slowly,
+  // so an import is attempted a few times before the capture is parked as
+  // UNSTABLE. Only transport failures are retried: a page that came back and
+  // is not a note will not become one on a second read.
+  NFCE_IMPORT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  // Base of the progressive wait between attempts, doubled each time.
+  NFCE_IMPORT_RETRY_DELAY_MS: z.coerce.number().int().min(0).max(60_000).default(1_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

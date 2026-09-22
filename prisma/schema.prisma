@@ -19,6 +19,16 @@ model User {
 
 // --- Materials -----------------------------------------------------------
 
+// Base units only, so every persisted quantity means the same thing without a
+// conversion table: a 1 kg bag is a packageQuantity of 1000 in GRAM. Reading
+// that back as "1,5 kg" is the interface's business.
+enum ConsumptionUnit {
+  UNIT
+  GRAM
+  MILLILITER
+  CENTIMETER
+}
+
 model Material {
   id                String    @id @default(uuid())
   name              String
@@ -26,6 +36,9 @@ model Material {
   imageUrl          String?
   packageCost       Decimal   @db.Decimal(12, 2)
   packageQuantity   Decimal   @db.Decimal(12, 3)
+  // The unit packageQuantity, stockQuantity, minimumStockAlert and every
+  // BomItem quantity are expressed in.
+  consumptionUnit   ConsumptionUnit
   stockQuantity     Decimal   @db.Decimal(12, 3)
   minimumStockAlert Decimal   @db.Decimal(12, 3)
   discontinuedAt    DateTime?
@@ -136,7 +149,16 @@ model SaleItem {
   materialId         String?
   quantity           Decimal @db.Decimal(12, 3)
   itemNameSnapshot   String
-  unitPriceSnapshot  Decimal @db.Decimal(12, 2)
+  // The frozen price, kept as the fraction it is instead of the per-unit
+  // figure it divides out to: the amount of a reference quantity, and that
+  // quantity. A CompositeProduct freezes its finalPrice over 1; a loose
+  // Material freezes the marked-up cost of a whole package over the
+  // packageQuantity that package holds. Dividing here would round the price
+  // of a gram or a millilitre up to a whole cent and overcharge every
+  // fractional sale -- R$ 3,60 for 120 g of flour that should cost R$ 3,36.
+  // The line total is derived from the pair at read time, never stored.
+  priceBasisAmount   Decimal @db.Decimal(12, 2)
+  priceBasisQuantity Decimal @db.Decimal(12, 3)
 
   sale             Sale              @relation(fields: [saleId], references: [id])
   compositeProduct CompositeProduct? @relation(fields: [compositeProductId], references: [id], onDelete: Restrict)
@@ -158,25 +180,43 @@ model StockMovementSnapshot {
 
 // --- Purchases ---------------------------------------------------------
 
+enum DiscountAllocationMode {
+  PROPORTIONAL
+  COMPANY_ONLY
+  PERSONAL_ONLY
+  MANUAL
+}
+
 model Purchase {
-  id             String   @id @default(uuid())
-  purchaseDate   DateTime @default(now())
+  id                     String                 @id @default(uuid())
+  purchaseDate           DateTime               @default(now())
   // 44-digit NFC-e access key. Null for purchases entered manually. Unique so
   // it can be used to deduplicate NFC-e imports.
-  accessKey      String?  @unique @db.Char(44)
+  accessKey              String?                @unique @db.Char(44)
   // Raw, immutable return of the NFC-e extraction. Never mutated after
   // creation, even when only part of the items become stock Materials.
-  rawInvoiceData Json?
+  rawInvoiceData         Json?
   // Header totals as the invoice reports them, not as a sum recomputed from
   // the lines: they are captured facts, in the same class as rawInvoiceData.
   // netTotal is what the company actually paid and is what the spending
   // panel aggregates; grossTotal is the replacement-cost side and feeds no
   // spending figure. discountTotal is exposed to the user as the period's
   // savings.
-  grossTotal     Decimal  @db.Decimal(12, 2)
-  discountTotal  Decimal  @db.Decimal(12, 2)
-  netTotal       Decimal  @db.Decimal(12, 2)
-  createdAt      DateTime @default(now())
+  grossTotal             Decimal                @db.Decimal(12, 2)
+  discountTotal          Decimal                @db.Decimal(12, 2)
+  netTotal               Decimal                @db.Decimal(12, 2)
+  // How the note's discount is attributed to the lines. The NFC-e reports the
+  // discount on the total and never says which item it belongs to, so the
+  // choice is the user's and is recorded per purchase.
+  discountAllocationMode DiscountAllocationMode @default(PROPORTIONAL)
+  // True while a MANUAL attribution has been invalidated by an edit to the
+  // lines and the user has not restated it. A purchase in this state is kept
+  // out of the spending panel: a period computed with only part of the
+  // discount attributed is wrong and looks fine.
+  allocationPending      Boolean                @default(false)
+  createdAt              DateTime               @default(now())
+
+  pendingInvoices PendingInvoice[]
 
   items PurchaseItem[]
 
@@ -185,27 +225,34 @@ model Purchase {
 }
 
 model PurchaseItem {
-  id               String  @id @default(uuid())
-  purchaseId       String
+  id                String  @id @default(uuid())
+  purchaseId        String
   // Set only when isStockMaterial is true.
-  materialId       String?
-  description      String
-  quantity         Decimal @db.Decimal(12, 3)
-  unitPrice        Decimal @db.Decimal(12, 2)
-  // Both sides of the line are stored, and neither is a derived value kept
-  // in sync with something else. grossValue is the line total the invoice
-  // itself reports — a captured fact, which the issuer may round a cent
-  // away from quantity × unitPrice — and it is the only figure allowed to
-  // feed a Material's packageCost. netValue is what was actually paid for
-  // the line after the note's discount is spread proportionally, and cannot
-  // be recomputed from this row alone: the rounding residue of that spread
-  // depends on every other line of the same note.
-  grossValue       Decimal @db.Decimal(12, 2)
-  netValue         Decimal @db.Decimal(12, 2)
+  materialId        String?
+  // The merchant's own product code, when the line came from an NFC-e. It is
+  // what the printed lines of a weighed item are folded together by.
+  code              String?
+  description       String
+  quantity          Decimal @db.Decimal(12, 3)
+  // The unit as the note printed it (UND9, KG9, PCT9). Kept for display while
+  // the user classifies the line, and never used to derive packageQuantity:
+  // the note calls a package of cheese one package, while stock cares about
+  // the 200 g inside it, and only the user knows that.
+  unit              String?
+  unitPrice         Decimal @db.Decimal(12, 2)
+  // grossValue is the line total the invoice itself reports — a captured
+  // fact, which the issuer may round a cent away from quantity × unitPrice —
+  // and it is the only figure allowed to feed a Material's packageCost.
+  grossValue        Decimal @db.Decimal(12, 2)
+  // This line's share of the note's discount. Persisted, and deliberately so:
+  // in PROPORTIONAL, COMPANY_ONLY and PERSONAL_ONLY it is computed, but in
+  // MANUAL it is the user's direct input and derives from nothing at all.
+  // netValue is NOT a column — it is grossValue minus this, on every read.
+  allocatedDiscount Decimal @default(0) @db.Decimal(12, 2)
   // Independent flags: being a stock Material implies being a company
   // expense, but the reverse does not hold (e.g. packaging, rent).
-  isCompanyExpense Boolean @default(true)
-  isStockMaterial  Boolean @default(false)
+  isCompanyExpense  Boolean @default(true)
+  isStockMaterial   Boolean @default(false)
 
   purchase Purchase  @relation(fields: [purchaseId], references: [id])
   material Material? @relation(fields: [materialId], references: [id], onDelete: Restrict)
@@ -225,7 +272,15 @@ model PendingInvoice {
   status        PendingInvoiceStatus @default(PENDING)
   attemptCount  Int                  @default(0)
   lastAttemptAt DateTime?
+  // The Purchase this capture became, set once the import succeeded. It is
+  // what lets a duplicate capture point the user at the purchase that already
+  // exists instead of creating a second one.
+  purchaseId    String?
+  // Why the last attempt failed, for the pending list. A message, never a stack.
+  lastError     String?
   createdAt     DateTime             @default(now())
+
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
 
   // Polled by the import job to pick up everything still awaiting processing.
   @@index([status])

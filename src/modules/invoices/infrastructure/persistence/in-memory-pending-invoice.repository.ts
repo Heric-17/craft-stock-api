@@ -16,6 +16,18 @@ export class InMemoryPendingInvoiceRepository implements PendingInvoiceRepositor
     );
   }
 
+  async findAll(): Promise<PendingInvoice[]> {
+    return Promise.resolve(
+      [...this.invoices.values()].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
+    );
+  }
+
+  async findByUrl(url: string): Promise<PendingInvoice | null> {
+    return Promise.resolve(
+      [...this.invoices.values()].find((invoice) => invoice.url === url) ?? null,
+    );
+  }
+
   async save(invoice: PendingInvoice): Promise<void> {
     this.invoices.set(invoice.id, invoice);
     return Promise.resolve();

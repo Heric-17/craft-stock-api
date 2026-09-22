@@ -2,6 +2,11 @@ import { BadRequestException, HttpStatus, NotFoundException } from '@nestjs/comm
 import type { ArgumentsHost } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import {
+  DuplicateInvoiceError,
+  InvoiceSourceUnavailableError,
+  InvoiceStructureChangedError,
+} from '../../../modules/invoices/domain/invoice.error';
 import { DomainError } from '../../domain/errors/domain.error';
 import { RequestContextService } from '../../infrastructure/logging/request-context.service';
 import type { StructuredLogger } from '../../infrastructure/logging/structured-logger.service';
@@ -99,5 +104,67 @@ describe('AllExceptionsFilter', () => {
     });
 
     expect(captured.body.correlationId).toBe('filter-id');
+  });
+
+  /**
+   * Three import failures that mean something more specific over the wire
+   * than "understood and refused". The status is decided here rather than on
+   * the error class, which carries no HTTP knowledge of its own.
+   */
+  describe('the named NFC-e import failures', () => {
+    it('reports an already-imported note as 409, naming the existing purchase', () => {
+      filter.catch(new DuplicateInvoiceError('4'.repeat(44), 'purchase-1'), host);
+
+      expect(captured.status).toBe(HttpStatus.CONFLICT);
+      expect(captured.body.message).toContain('purchase-1');
+      expect(captured.body.error).toBe('DuplicateInvoiceError');
+    });
+
+    it('reports an unreachable portal as 503', () => {
+      filter.catch(new InvoiceSourceUnavailableError('The portal did not answer.', 3), host);
+
+      expect(captured.status).toBe(HttpStatus.SERVICE_UNAVAILABLE);
+      expect(captured.body.error).toBe('InvoiceSourceUnavailableError');
+    });
+
+    it('reports a page that is not a note as 502', () => {
+      filter.catch(new InvoiceStructureChangedError('Markers absent.'), host);
+
+      expect(captured.status).toBe(HttpStatus.BAD_GATEWAY);
+      expect(captured.body.error).toBe('InvoiceStructureChangedError');
+    });
+
+    /**
+     * The alarm for the scraping having broken. A warning buried among
+     * ordinary refusals would not be seen, and every import from that source
+     * is failing until someone looks.
+     */
+    it('logs a structural break at error severity, not as a warning', () => {
+      filter.catch(new InvoiceStructureChangedError('Markers absent.'), host);
+
+      expect(logger.error).toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
+      const calls = logger.error.mock.calls as unknown[][];
+      expect(String(calls[0][0])).toContain('structurally broken');
+    });
+
+    /**
+     * Also an error, by the ordinary 5xx rule — but without the structural
+     * break's prefix, so the two are distinguishable in the log. One says the
+     * portal is down; the other says our scraper is.
+     */
+    it('logs an unavailable portal without the structural-break wording', () => {
+      filter.catch(new InvoiceSourceUnavailableError('down', 3), host);
+
+      expect(logger.error).toHaveBeenCalled();
+      const calls = logger.error.mock.calls as unknown[][];
+      expect(String(calls[0][0])).not.toContain('structurally broken');
+    });
+
+    it('still defaults an unmapped domain error to 422', () => {
+      filter.catch(new InsufficientStockError(), host);
+
+      expect(captured.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+    });
   });
 });

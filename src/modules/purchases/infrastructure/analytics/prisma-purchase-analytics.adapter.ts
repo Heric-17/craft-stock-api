@@ -22,40 +22,36 @@ export class PrismaPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
   constructor(@Inject(PrismaService) private readonly prisma: Prisma.TransactionClient) {}
 
   /**
-   * Spending and discount are summed in two separate passes and joined on the
-   * bucket afterwards. Summing both in one pass over the join would multiply
-   * each note's header discount by its number of lines.
+   * Both figures are summed over the company-expense lines, in one pass.
+   *
+   * Spending is `grossValue − allocatedDiscount` per line, which is the line's
+   * net value — derived here rather than read from a column, exactly as the
+   * domain derives it.
+   *
+   * Savings is the sum of `allocatedDiscount` over those same lines, and
+   * deliberately not the notes' `discountTotal`: counting the whole header
+   * discount would credit the company with savings obtained on a personal
+   * item sharing the same note.
+   *
+   * Purchases whose manual attribution is still pending are left out. Their
+   * discount is only partly attributed, so including them would report a
+   * period as having spent more than it did, with nothing to show for it.
    */
   async spendingByPeriod(query: SpendingByPeriodQuery): Promise<SpendingByPeriod[]> {
     const unit = query.granularity === 'MONTH' ? 'month' : 'day';
 
     const rows = await this.prisma.$queryRaw<SpendingRow[]>`
-      WITH spend AS (
-        SELECT
-          date_trunc(${unit}::text, p."purchaseDate") AS bucket,
-          SUM(i."netValue") AS total
-        FROM "PurchaseItem" AS i
-        JOIN "Purchase" AS p ON p."id" = i."purchaseId"
-        WHERE p."purchaseDate" >= ${query.from}
-          AND p."purchaseDate" < ${query.to}
-          AND i."isCompanyExpense" = TRUE
-        GROUP BY 1
-      ),
-      discount AS (
-        SELECT
-          date_trunc(${unit}::text, p."purchaseDate") AS bucket,
-          SUM(p."discountTotal") AS total
-        FROM "Purchase" AS p
-        WHERE p."purchaseDate" >= ${query.from}
-          AND p."purchaseDate" < ${query.to}
-        GROUP BY 1
-      )
       SELECT
-        COALESCE(spend.bucket, discount.bucket) AS "bucket",
-        COALESCE(spend.total, 0) AS "netSpend",
-        COALESCE(discount.total, 0) AS "discountTotal"
-      FROM spend
-      FULL OUTER JOIN discount ON discount.bucket = spend.bucket
+        date_trunc(${unit}::text, p."purchaseDate") AS "bucket",
+        COALESCE(SUM(i."grossValue" - i."allocatedDiscount"), 0) AS "netSpend",
+        COALESCE(SUM(i."allocatedDiscount"), 0) AS "discountTotal"
+      FROM "PurchaseItem" AS i
+      JOIN "Purchase" AS p ON p."id" = i."purchaseId"
+      WHERE p."purchaseDate" >= ${query.from}
+        AND p."purchaseDate" < ${query.to}
+        AND p."allocationPending" = FALSE
+        AND i."isCompanyExpense" = TRUE
+      GROUP BY 1
       ORDER BY 1
     `;
 

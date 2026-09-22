@@ -8,3 +8,10 @@ export class MaterialNotFoundError extends DomainError {}
 
 /** Raised when a stock entry command does not describe exactly one change. */
 export class InvalidStockEntryError extends DomainError {}
+
+/**
+ * Raised when a `Material`'s `consumptionUnit` is changed while something is
+ * already expressed in the current one — stock on hand, or a `BomItem` that
+ * consumes it.
+ */
+export class ConsumptionUnitLockedError extends DomainError {}

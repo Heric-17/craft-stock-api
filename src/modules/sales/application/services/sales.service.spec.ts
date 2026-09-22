@@ -15,8 +15,10 @@ import { InMemoryUserRepository } from '../../../users/infrastructure/persistenc
 import {
   DiscontinuedMaterialReferenceError,
   EmptySaleError,
+  MissingLooseMaterialMarginError,
   SaleNotEditableError,
   SaleNotFoundError,
+  UnexpectedMarginError,
   UnknownMaterialReferenceError,
 } from '../../domain/sale.error';
 import { InMemorySaleRepository } from '../../infrastructure/persistence/in-memory-sale.repository';
@@ -61,6 +63,8 @@ function buildMaterial(
     imageUrl: null,
     packageCost: Money.fromDecimalString('10.00'),
     packageQuantity: 1000,
+    // 1 kg bag of flour, consumed by the gram.
+    consumptionUnit: 'GRAM',
     stockQuantity: 1000,
     minimumStockAlert: 100,
     discontinuedAt: null,
@@ -128,26 +132,96 @@ describe('SalesService', () => {
       await expect(service.create(buildCreateInput({ items: [] }))).rejects.toThrow(EmptySaleError);
     });
 
-    it('snapshots a loose-Material ("avulso") item at the Material unitCost', async () => {
+    it('freezes a loose-Material ("avulso") line as the package price over the package quantity', async () => {
       const { service, materials } = buildService();
       const flour = buildMaterial({
-        packageCost: Money.fromDecimalString('10.00'),
+        packageCost: Money.fromDecimalString('28.00'),
         packageQuantity: 1000,
       });
       await materials.save(flour);
 
       const sale = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 3 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 120, marginPercent: 0 }] }),
       );
 
       expect(sale.items).toHaveLength(1);
       expect(sale.items[0].itemNameSnapshot).toBe('Farinha de trigo');
-      expect(sale.items[0].unitPriceSnapshot).toBe('0.01');
-      expect(sale.items[0].subtotal).toBe('0.03');
-      expect(sale.totalAmount).toBe('0.03');
+      // The whole package and what it holds, not R$ 0,03 per gram.
+      expect(sale.items[0].priceBasisAmount).toBe('28.00');
+      expect(sale.items[0].priceBasisQuantity).toBe(1000);
+      expect(sale.items[0].unitPrice).toBe('0.0280');
+      // 28.00 x 120 / 1000, and nothing else: R$ 3,60 here would mean the
+      // per-unit price had been rounded before being multiplied.
+      expect(sale.items[0].lineTotal).toBe('3.36');
+      expect(sale.totalAmount).toBe('3.36');
     });
 
-    it('snapshots a CompositeProduct item at its computed finalPrice', async () => {
+    it('applies the margin given for the sale to the whole package price', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial({
+        packageCost: Money.fromDecimalString('28.00'),
+        packageQuantity: 1000,
+      });
+      await materials.save(flour);
+
+      const sale = await service.create(
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 120, marginPercent: 50 }] }),
+      );
+
+      expect(sale.items[0].priceBasisAmount).toBe('42.00');
+      expect(sale.items[0].lineTotal).toBe('5.04');
+    });
+
+    it('charges the whole amount when the unit price does not divide evenly', async () => {
+      const { service, materials } = buildService();
+      // R$ 10,00 for a package of 3: R$ 3,3333... each, which no per-unit
+      // snapshot can hold. Selling all three must charge the R$ 10,00 paid.
+      const eggs = buildMaterial({
+        name: 'Ovo',
+        packageCost: Money.fromDecimalString('10.00'),
+        packageQuantity: 3,
+        consumptionUnit: 'UNIT',
+        stockQuantity: 3,
+      });
+      await materials.save(eggs);
+
+      const sale = await service.create(
+        buildCreateInput({ items: [{ materialId: eggs.id, quantity: 3, marginPercent: 0 }] }),
+      );
+
+      expect(sale.items[0].unitPrice).toBe('3.3333');
+      expect(sale.items[0].lineTotal).toBe('10.00');
+      expect(sale.totalAmount).toBe('10.00');
+    });
+
+    it('rejects a loose-Material line with no margin stated', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial();
+      await materials.save(flour);
+
+      // Selling at cost is allowed, but only on purpose: `marginPercent: 0`
+      // says so, and an absent margin is not the same statement.
+      await expect(
+        service.create(buildCreateInput({ items: [{ materialId: flour.id, quantity: 120 }] })),
+      ).rejects.toThrow(MissingLooseMaterialMarginError);
+    });
+
+    it('rejects a margin on a CompositeProduct line, which carries its own', async () => {
+      const { service, materials, compositeProducts } = buildService();
+      const flour = buildMaterial();
+      await materials.save(flour);
+      const product = buildCompositeProductWithBom(compositeProducts, flour);
+
+      await expect(
+        service.create(
+          buildCreateInput({
+            items: [{ compositeProductId: product.id, quantity: 1, marginPercent: 20 }],
+          }),
+        ),
+      ).rejects.toThrow(UnexpectedMarginError);
+    });
+
+    it('freezes a CompositeProduct line at its computed finalPrice over a basis of one', async () => {
       const { service, materials, compositeProducts } = buildService();
       const flour = buildMaterial();
       await materials.save(flour);
@@ -157,9 +231,14 @@ describe('SalesService', () => {
         buildCreateInput({ items: [{ compositeProductId: product.id, quantity: 2 }] }),
       );
 
-      // materialsCost = 0.01 * 120 = 1.20; totalCost = 1.20 + 2.50 = 3.70; suggestedPrice = 3.70 * 1.35 = 5.00
-      expect(sale.items[0].unitPriceSnapshot).toBe('5.00');
-      expect(sale.items[0].subtotal).toBe('10.00');
+      // materialsCost = 10.00 x 120 / 1000 = 1.20; totalCost = 1.20 + 2.50 = 3.70;
+      // suggestedPrice = 3.70 x 1.35 = 5.00
+      expect(sale.items[0].priceBasisAmount).toBe('5.00');
+      // A product is sold by the piece, so the basis is one piece — which is
+      // what keeps this line behaving exactly as it did before the pair.
+      expect(sale.items[0].priceBasisQuantity).toBe(1);
+      expect(sale.items[0].unitPrice).toBe('5.0000');
+      expect(sale.items[0].lineTotal).toBe('10.00');
     });
 
     it('rejects an item referencing both a CompositeProduct and a Material', async () => {
@@ -176,7 +255,7 @@ describe('SalesService', () => {
       const { service } = buildService();
 
       await expect(
-        service.create(buildCreateInput({ items: [{ materialId: 'missing', quantity: 1 }] })),
+        service.create(buildCreateInput({ items: [{ materialId: 'missing', quantity: 1, marginPercent: 0 }] })),
       ).rejects.toThrow(UnknownMaterialReferenceError);
     });
 
@@ -186,7 +265,7 @@ describe('SalesService', () => {
       await materials.save(flour);
 
       await expect(
-        service.create(buildCreateInput({ items: [{ materialId: flour.id, quantity: 1 }] })),
+        service.create(buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] })),
       ).rejects.toThrow(DiscontinuedMaterialReferenceError);
     });
   });
@@ -200,12 +279,13 @@ describe('SalesService', () => {
       await materials.save(sugar);
 
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
       );
 
       const withSecondItem = await service.addItem(created.id, {
         materialId: sugar.id,
         quantity: 2,
+        marginPercent: 0,
       });
       expect(withSecondItem.items).toHaveLength(2);
 
@@ -224,7 +304,7 @@ describe('SalesService', () => {
       const flour = buildMaterial();
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
       );
 
       const updated = await service.updateDetails(created.id, { customerName: 'Joana' });
@@ -237,12 +317,12 @@ describe('SalesService', () => {
       const flour = buildMaterial();
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
       );
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
 
       await expect(
-        service.addItem(created.id, { materialId: flour.id, quantity: 1 }),
+        service.addItem(created.id, { materialId: flour.id, quantity: 1, marginPercent: 0 }),
       ).rejects.toThrow(SaleNotEditableError);
       await expect(service.updateDetails(created.id, { customerName: 'Joana' })).rejects.toThrow(
         SaleNotEditableError,
@@ -256,7 +336,7 @@ describe('SalesService', () => {
       const flour = buildMaterial();
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
       );
 
       const updated = await service.updatePaymentStatus(created.id, 'PAID');
@@ -272,7 +352,7 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 1000 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -286,7 +366,7 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 100 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -304,7 +384,7 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 1000 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -322,7 +402,7 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 100 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -342,7 +422,7 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 1000 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -360,10 +440,10 @@ describe('SalesService', () => {
       const flour = buildMaterial();
       await materials.save(flour);
       const a = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
       );
       const b = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
       );
       await service.updatePaymentStatus(a.id, 'PAID');
       await service.updateProductionStatus(b.id, 'ASSEMBLED');
@@ -376,16 +456,82 @@ describe('SalesService', () => {
     });
   });
 
+  describe('the frozen price basis, after the fact', () => {
+    it('keeps both basis fields when the quantity of a line changes', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial({
+        packageCost: Money.fromDecimalString('28.00'),
+        packageQuantity: 1000,
+      });
+      await materials.save(flour);
+      const created = await service.create(
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 120, marginPercent: 50 }] }),
+      );
+
+      const updated = await service.updateItemQuantity(created.id, created.items[0].id, 240);
+
+      expect(updated.items[0].priceBasisAmount).toBe('42.00');
+      expect(updated.items[0].priceBasisQuantity).toBe(1000);
+      // Only the derived total follows the new quantity.
+      expect(updated.items[0].lineTotal).toBe('10.08');
+    });
+
+    it('is untouched by the referenced Material getting more expensive', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial({
+        packageCost: Money.fromDecimalString('28.00'),
+        packageQuantity: 1000,
+      });
+      await materials.save(flour);
+      const created = await service.create(
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 120, marginPercent: 0 }] }),
+      );
+
+      await materials.save(
+        flour.update(
+          { packageCost: Money.fromDecimalString('35.00') },
+          new Date('2026-02-01T00:00:00Z'),
+        ),
+      );
+
+      const reread = await service.findById(created.id);
+      expect(reread.items[0].priceBasisAmount).toBe('28.00');
+      expect(reread.items[0].lineTotal).toBe('3.36');
+      expect(reread.totalAmount).toBe('3.36');
+    });
+
+    it('is untouched by the referenced CompositeProduct being repriced', async () => {
+      const { service, materials, compositeProducts } = buildService();
+      const flour = buildMaterial();
+      await materials.save(flour);
+      const product = buildCompositeProductWithBom(compositeProducts, flour);
+      const created = await service.create(
+        buildCreateInput({ items: [{ compositeProductId: product.id, quantity: 2 }] }),
+      );
+
+      await compositeProducts.save(
+        product.update(
+          { manualPrice: Money.fromDecimalString('99.00') },
+          new Date('2026-02-01T00:00:00Z'),
+        ),
+      );
+
+      const reread = await service.findById(created.id);
+      expect(reread.items[0].priceBasisAmount).toBe('5.00');
+      expect(reread.items[0].lineTotal).toBe('10.00');
+    });
+  });
+
   describe('getShoppingList (case 5)', () => {
     it('aggregates need across selected Sales and reports the shortage per Material', async () => {
       const { service, materials } = buildService();
       const flour = buildMaterial({ stockQuantity: 100 });
       await materials.save(flour);
       const a = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 60 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 60, marginPercent: 0 }] }),
       );
       const b = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 80 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 80, marginPercent: 0 }] }),
       );
 
       const list = await service.getShoppingList([a.id, b.id]);
@@ -397,6 +543,10 @@ describe('SalesService', () => {
           needed: 140,
           stockQuantity: 100,
           shortage: 40,
+          // Every quantity on the line is in the Material's own unit, so the
+          // list says which one: 40 of flour is 40 g, not 40 bags.
+          consumptionUnit: 'GRAM',
+          consumptionUnitSymbol: 'g',
         },
       ]);
     });

@@ -25,13 +25,25 @@ export class InMemoryPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
         continue;
       }
 
+      // A purchase whose manual attribution is still pending has only part of
+      // its discount placed, so the period it falls in cannot be computed yet.
+      if (!purchase.isCountedInSpending) {
+        continue;
+      }
+
       const period = formatPeriod(purchase.purchaseDate, query.granularity);
       const bucket = buckets.get(period) ?? { netSpend: Money.zero(), discountTotal: Money.zero() };
-      const items = await this.purchases.findItemsByPurchaseId(purchase.id);
+      const companyLines = purchase.items.filter((item) => item.isCompanyExpense);
 
       buckets.set(period, {
-        netSpend: items.reduce((total, item) => total.plus(item.expenseValue), bucket.netSpend),
-        discountTotal: bucket.discountTotal.plus(purchase.discountTotal),
+        netSpend: companyLines.reduce((total, item) => total.plus(item.netValue), bucket.netSpend),
+        // The savings of the period are the discount attributed to company
+        // lines, never the note's whole header discount: that would credit
+        // the company with a saving made on a personal item.
+        discountTotal: companyLines.reduce(
+          (total, item) => total.plus(item.allocatedDiscount),
+          bucket.discountTotal,
+        ),
       });
     }
 

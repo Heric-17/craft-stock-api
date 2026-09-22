@@ -1,11 +1,15 @@
 import type { Purchase } from '../../domain/purchase.entity';
-import type { PurchaseItem } from '../../domain/purchase-item.entity';
 import type { PurchaseRepository } from '../../domain/repositories/purchase.repository';
 
-/** In-memory `PurchaseRepository` for `application/` tests. Never mocks Prisma. */
+/**
+ * In-memory `PurchaseRepository` for `application/` tests. Never mocks Prisma.
+ *
+ * It stores whole aggregates, exactly as the Prisma one does — there is no
+ * way to reach a single line through it, because there is no way to reach one
+ * through the real repository either.
+ */
 export class InMemoryPurchaseRepository implements PurchaseRepository {
   private readonly purchases = new Map<string, Purchase>();
-  private readonly items = new Map<string, PurchaseItem>();
 
   async findById(id: string): Promise<Purchase | null> {
     return Promise.resolve(this.purchases.get(id) ?? null);
@@ -28,19 +32,6 @@ export class InMemoryPurchaseRepository implements PurchaseRepository {
 
   async delete(id: string): Promise<void> {
     this.purchases.delete(id);
-    return Promise.resolve();
-  }
-
-  async findItemsByPurchaseId(purchaseId: string): Promise<PurchaseItem[]> {
-    return Promise.resolve(
-      [...this.items.values()].filter((item) => item.purchaseId === purchaseId),
-    );
-  }
-
-  async saveItems(items: PurchaseItem[]): Promise<void> {
-    for (const item of items) {
-      this.items.set(item.id, item);
-    }
     return Promise.resolve();
   }
 }

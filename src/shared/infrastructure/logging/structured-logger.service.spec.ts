@@ -11,6 +11,9 @@ function envWithLogLevel(level: LogLevel): EnvService {
     PORT: 3000,
     LOG_LEVEL: level,
     DATABASE_URL: 'postgresql://localhost:5432/craftstock',
+    NFCE_PROVIDER: 'AUTO',
+    NFCE_IMPORT_MAX_ATTEMPTS: 3,
+    NFCE_IMPORT_RETRY_DELAY_MS: 1_000,
   };
 
   const config = {

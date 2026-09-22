@@ -15,7 +15,8 @@ export class SaleItemMapper {
       materialId: row.materialId,
       quantity: row.quantity.toNumber(),
       itemNameSnapshot: row.itemNameSnapshot,
-      unitPriceSnapshot: toDomainMoney(row.unitPriceSnapshot),
+      priceBasisAmount: toDomainMoney(row.priceBasisAmount),
+      priceBasisQuantity: row.priceBasisQuantity.toNumber(),
     });
   }
 
@@ -27,7 +28,8 @@ export class SaleItemMapper {
       materialId: item.materialId,
       quantity: new Prisma.Decimal(item.quantity),
       itemNameSnapshot: item.itemNameSnapshot,
-      unitPriceSnapshot: toPersistenceDecimal(item.unitPriceSnapshot),
+      priceBasisAmount: toPersistenceDecimal(item.priceBasisAmount),
+      priceBasisQuantity: new Prisma.Decimal(item.priceBasisQuantity),
     };
   }
 }

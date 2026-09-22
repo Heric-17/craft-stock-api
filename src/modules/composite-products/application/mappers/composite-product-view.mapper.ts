@@ -1,6 +1,8 @@
+import { consumptionUnitSymbol } from '../../../materials/domain/consumption-unit';
 import type { Material } from '../../../materials/domain/material.entity';
 import type { BillOfMaterials } from '../../domain/bill-of-materials.entity';
 import {
+  calculateBomItemCost,
   calculateFinalPrice,
   calculateMaterialsCost,
   calculateSuggestedPrice,
@@ -28,7 +30,11 @@ export class CompositeProductViewMapper {
     }));
 
     const materialsCost = calculateMaterialsCost(
-      items.map(({ item, material }) => ({ quantity: item.quantity, unitCost: material.unitCost })),
+      items.map(({ item, material }) => ({
+        quantity: item.quantity,
+        packageCost: material.packageCost,
+        packageQuantity: material.packageQuantity,
+      })),
     );
     const totalCost = calculateTotalCost(materialsCost, product.fixedOperationalCost);
     const suggestedPrice = calculateSuggestedPrice(totalCost, product.profitMargin);
@@ -49,8 +55,19 @@ export class CompositeProductViewMapper {
       materialId: item.materialId,
       materialName: material.name,
       quantity: item.quantity,
-      unitCost: material.unitCost.toDecimalString(),
-      lineCost: material.unitCost.times(item.quantity).toDecimalString(),
+      // The line quantity is in the Material's own unit, so it travels with
+      // it: 120 of a Material measured in grams and 120 of one measured in
+      // units are the same number and nothing alike.
+      consumptionUnit: material.consumptionUnit,
+      consumptionUnitSymbol: consumptionUnitSymbol(material.consumptionUnit),
+      // Shown with sub-cent precision, because most consumption units cost
+      // less than a cent. It is a label, never the base of the line cost.
+      unitCost: material.unitCost,
+      lineCost: calculateBomItemCost(
+        material.packageCost,
+        item.quantity,
+        material.packageQuantity,
+      ).toDecimalString(),
       stockQuantity: material.stockQuantity,
       possibleUnits: possibleUnitsByMaterialId.get(item.materialId) ?? 0,
     }));

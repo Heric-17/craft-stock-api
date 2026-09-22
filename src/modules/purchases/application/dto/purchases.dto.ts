@@ -1,7 +1,13 @@
 import type { SpendingGranularity } from '../../domain/ports/purchase-analytics.port';
 
+import type { DiscountAllocationMode } from '../../domain/discount-allocation-mode';
+
 /** One parsed line of an invoice, already matched against stock or not. */
 export interface InvoiceLineInput {
+  /** The merchant's product code, when the line came from an NFC-e. */
+  code?: string | null;
+  /** The unit as the note printed it. Display only — it never feeds `packageQuantity`. */
+  unit?: string | null;
   description: string;
   quantity: number;
   /** Gross unit price as printed on the note, as a decimal string. */
@@ -21,16 +27,22 @@ export interface RegisterInvoicePurchaseInput {
   grossTotal: string;
   /** Note header discount, as a decimal string. `"0"` when there is none. */
   discountTotal: string;
+  /** Defaults to `PROPORTIONAL`. `MANUAL` is not available at creation time. */
+  discountAllocationMode?: DiscountAllocationMode;
   lines: InvoiceLineInput[];
 }
 
 export interface PurchaseItemView {
   id: string;
   materialId: string | null;
+  code: string | null;
   description: string;
   quantity: number;
+  unit: string | null;
   unitPrice: string;
   grossValue: string;
+  allocatedDiscount: string;
+  /** Derived, never stored: `grossValue` minus `allocatedDiscount`. */
   netValue: string;
   isCompanyExpense: boolean;
   isStockMaterial: boolean;
@@ -43,6 +55,9 @@ export interface PurchaseView {
   grossTotal: string;
   discountTotal: string;
   netTotal: string;
+  discountAllocationMode: DiscountAllocationMode;
+  /** True while a `MANUAL` attribution has been invalidated by an edit and not restated. */
+  allocationPending: boolean;
   createdAt: Date;
   items: PurchaseItemView[];
 }

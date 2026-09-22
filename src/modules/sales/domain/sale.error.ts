@@ -31,3 +31,14 @@ export class DiscontinuedCompositeProductReferenceError extends DomainError {}
 
 /** Raised when a `SaleItem` references a `Material` that is discontinued. */
 export class DiscontinuedMaterialReferenceError extends DomainError {}
+
+/**
+ * Raised when a loose-Material ("avulso") line is created without a margin.
+ *
+ * Selling at cost is allowed, but only when the seller says so: a margin
+ * defaulted to zero produces a sale that looks priced and earns nothing.
+ */
+export class MissingLooseMaterialMarginError extends DomainError {}
+
+/** Raised when a margin is given for a `CompositeProduct` line, which is priced by its own `finalPrice`. */
+export class UnexpectedMarginError extends DomainError {}

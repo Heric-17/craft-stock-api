@@ -70,6 +70,7 @@ describe('Purchase spending and discount policy (e2e)', () => {
       imageUrl: null,
       packageCost: Money.fromDecimalString(packageCost),
       packageQuantity: 1000,
+      consumptionUnit: 'GRAM',
       stockQuantity: 0,
       minimumStockAlert: 0,
       discontinuedAt: null,
@@ -118,7 +119,15 @@ describe('Purchase spending and discount policy (e2e)', () => {
     });
 
     expect(rows.map((row) => row.grossValue.toString())).toEqual(['20', '10']);
-    expect(rows.map((row) => row.netValue.toString())).toEqual(['6.67', '3.33']);
+    // A 20.00 discount over a 30.00 note: 13.33 lands on the 20.00 line and
+    // 6.67 on the 10.00 one, and the two add up to exactly the note's
+    // discount. netValue is not read back because it is not a column — it is
+    // grossValue minus the attributed discount, derived on every read.
+    expect(rows.map((row) => row.allocatedDiscount.toString())).toEqual(['13.33', '6.67']);
+    expect(rows.map((row) => row.grossValue.minus(row.allocatedDiscount).toString())).toEqual([
+      '6.67',
+      '3.33',
+    ]);
 
     // The cost of restocking is the 20.00 the package lists for, not the
     // 6.67 this one note happened to charge after its discount.

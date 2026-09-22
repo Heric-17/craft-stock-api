@@ -4,7 +4,7 @@ import type { PurchaseItem } from '../../domain/purchase-item.entity';
 import type { PurchaseItemView, PurchaseView, SpendingByPeriodView } from '../dto/purchases.dto';
 
 export class PurchaseViewMapper {
-  static toView(purchase: Purchase, items: readonly PurchaseItem[]): PurchaseView {
+  static toView(purchase: Purchase): PurchaseView {
     return {
       id: purchase.id,
       purchaseDate: purchase.purchaseDate,
@@ -12,8 +12,10 @@ export class PurchaseViewMapper {
       grossTotal: purchase.grossTotal.toDecimalString(),
       discountTotal: purchase.discountTotal.toDecimalString(),
       netTotal: purchase.netTotal.toDecimalString(),
+      discountAllocationMode: purchase.discountAllocationMode,
+      allocationPending: purchase.allocationPending,
       createdAt: purchase.createdAt,
-      items: items.map((item) => PurchaseViewMapper.toItemView(item)),
+      items: purchase.items.map((item) => PurchaseViewMapper.toItemView(item)),
     };
   }
 
@@ -21,10 +23,13 @@ export class PurchaseViewMapper {
     return {
       id: item.id,
       materialId: item.materialId,
+      code: item.code,
       description: item.description,
       quantity: item.quantity,
+      unit: item.unit,
       unitPrice: item.unitPrice.toDecimalString(),
       grossValue: item.grossValue.toDecimalString(),
+      allocatedDiscount: item.allocatedDiscount.toDecimalString(),
       netValue: item.netValue.toDecimalString(),
       isCompanyExpense: item.isCompanyExpense,
       isStockMaterial: item.isStockMaterial,

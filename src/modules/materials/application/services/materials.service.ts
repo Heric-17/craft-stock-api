@@ -5,6 +5,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
 import { Money } from '../../../../shared/domain/money/money';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
+import type { ConsumptionUnit } from '../../domain/consumption-unit';
 import { Material } from '../../domain/material.entity';
 import { MaterialPriceHistory } from '../../domain/material-price-history.entity';
 import { InvalidStockEntryError, MaterialNotFoundError } from '../../domain/material.error';
@@ -40,6 +41,7 @@ export class MaterialsService {
       imageUrl: input.imageUrl,
       packageCost,
       packageQuantity: input.packageQuantity,
+      consumptionUnit: input.consumptionUnit,
       stockQuantity: input.stockQuantity,
       minimumStockAlert: input.minimumStockAlert,
       discontinuedAt: null,
@@ -108,6 +110,30 @@ export class MaterialsService {
           }),
         );
       }
+    });
+
+    return MaterialViewMapper.toView(updated);
+  }
+
+  /**
+   * Switches the unit a `Material` is consumed by.
+   *
+   * A separate operation rather than a field of `update`, because it is not
+   * an edit of a value: it reinterprets every quantity recorded against this
+   * Material. The `BomItem` count is read here and the decision is the
+   * entity's — this service does not re-state the rule.
+   */
+  async changeConsumptionUnit(
+    materialId: string,
+    consumptionUnit: ConsumptionUnit,
+  ): Promise<MaterialView> {
+    const now = new Date();
+    const current = await this.findByIdOrThrow(materialId);
+    const bomItemReferences = await this.materials.countBomItemReferences(materialId);
+    const updated = current.changeConsumptionUnit(consumptionUnit, { bomItemReferences }, now);
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.materials.save(updated);
     });
 
     return MaterialViewMapper.toView(updated);

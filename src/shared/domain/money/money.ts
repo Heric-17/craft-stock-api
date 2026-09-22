@@ -89,6 +89,36 @@ export class Money {
     return new Money(Money.round(this.cents / divisor));
   }
 
+  /**
+   * `this × multiplier ÷ divisor`, rounded exactly once, at the end.
+   *
+   * Chaining `times` and `dividedBy` would round twice, and the intermediate
+   * rounding is the expensive one: a 1 kg bag of flour at R$ 28,00 costs
+   * R$ 0,028 per gram, which `dividedBy` alone has to flatten to R$ 0,03,
+   * because a `Money` holds whole cents. Multiplying that by the 120 g a
+   * recipe uses gives R$ 3,60 instead of R$ 3,36 — a 7% error on every line
+   * of every recipe with a fractional ingredient, compounding down the bill
+   * of materials and into the suggested price.
+   *
+   * Doing both in one step keeps the fraction of a cent alive until there is
+   * a real amount to round, which is the whole reason this class exists.
+   */
+  scaled(multiplier: number, divisor: number): Money {
+    if (!Number.isFinite(multiplier)) {
+      throw new InvalidMoneyOperationError(
+        `Money.scaled requires a finite multiplier, received ${multiplier}.`,
+      );
+    }
+
+    if (!Number.isFinite(divisor) || divisor === 0) {
+      throw new InvalidMoneyOperationError(
+        `Money.scaled requires a finite, non-zero divisor, received ${divisor}.`,
+      );
+    }
+
+    return new Money(Money.round((this.cents * multiplier) / divisor));
+  }
+
   equals(other: Money): boolean {
     return this.cents === other.cents;
   }

@@ -1,3 +1,4 @@
+import { consumptionUnitSymbol } from '../../domain/consumption-unit';
 import type { Material } from '../../domain/material.entity';
 import type { MaterialPriceHistory } from '../../domain/material-price-history.entity';
 import type { MaterialPriceHistoryView, MaterialView } from '../dto/materials.dto';
@@ -11,9 +12,11 @@ export class MaterialViewMapper {
       imageUrl: material.imageUrl,
       packageCost: material.packageCost.toDecimalString(),
       packageQuantity: material.packageQuantity,
+      consumptionUnit: material.consumptionUnit,
+      consumptionUnitSymbol: consumptionUnitSymbol(material.consumptionUnit),
       stockQuantity: material.stockQuantity,
       minimumStockAlert: material.minimumStockAlert,
-      unitCost: material.unitCost.toDecimalString(),
+      unitCost: material.unitCost,
       lowStock: material.isBelowMinimumStock,
       isActive: material.isActive,
       discontinuedAt: material.discontinuedAt,

@@ -76,4 +76,8 @@ export class PrismaMaterialRepository implements MaterialRepository {
 
     return bomItems + saleItems + purchaseItems + stockMovements;
   }
+
+  async countBomItemReferences(materialId: string): Promise<number> {
+    return this.prisma.bomItem.count({ where: { materialId } });
+  }
 }

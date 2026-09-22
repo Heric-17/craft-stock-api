@@ -21,6 +21,19 @@ export class PrismaPendingInvoiceRepository implements PendingInvoiceRepository 
     return rows.map((row) => PendingInvoiceMapper.toDomain(row));
   }
 
+  async findAll(): Promise<PendingInvoice[]> {
+    const rows = await this.prisma.pendingInvoice.findMany({ orderBy: { createdAt: 'desc' } });
+    return rows.map((row) => PendingInvoiceMapper.toDomain(row));
+  }
+
+  async findByUrl(url: string): Promise<PendingInvoice | null> {
+    const row = await this.prisma.pendingInvoice.findFirst({
+      where: { url },
+      orderBy: { createdAt: 'desc' },
+    });
+    return row ? PendingInvoiceMapper.toDomain(row) : null;
+  }
+
   async save(invoice: PendingInvoice): Promise<void> {
     const data = PendingInvoiceMapper.toPersistence(invoice);
 
