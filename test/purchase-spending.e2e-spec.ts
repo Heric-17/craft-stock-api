@@ -44,6 +44,7 @@ describe('Purchase spending and discount policy (e2e)', () => {
   const SHOPS = { from: new Date('2033-03-01T00:00:00Z'), to: new Date('2033-04-01T00:00:00Z') };
   const QUARTER = { from: new Date('2034-01-01T00:00:00Z'), to: new Date('2034-04-01T00:00:00Z') };
   const SILENT = { from: new Date('2035-06-01T00:00:00Z'), to: new Date('2035-07-01T00:00:00Z') };
+  const PARKED = { from: new Date('2038-02-01T00:00:00Z'), to: new Date('2038-03-01T00:00:00Z') };
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -332,6 +333,63 @@ describe('Purchase spending and discount policy (e2e)', () => {
     // division the client does over these two figures, not an endpoint.
     expect(dataset.byPeriod).toEqual([
       { period: '2033-03', netSpend: '40.00', discountTotal: '10.00', purchaseCount: 2 },
+    ]);
+  });
+
+  it('leaves a purchase with a pending manual attribution out of the dataset', async () => {
+    const view = await record({
+      purchaseDate: new Date('2038-02-12T09:00:00Z'),
+      accessKey: null,
+      rawInvoiceData: null,
+      grossTotal: '100.00',
+      discountTotal: '10.00',
+      lines: [
+        {
+          description: 'Farinha',
+          quantity: 1,
+          unitPrice: '60.00',
+          grossValue: '60.00',
+          isCompanyExpense: true,
+          materialId: null,
+        },
+        {
+          description: 'Açúcar',
+          quantity: 1,
+          unitPrice: '40.00',
+          grossValue: '40.00',
+          isCompanyExpense: true,
+          materialId: null,
+        },
+      ],
+    });
+
+    await editing.setDiscountAllocation(view.id, {
+      mode: 'MANUAL',
+      manualAllocation: [
+        { itemId: view.items[0].id, allocatedDiscount: '10.00' },
+        { itemId: view.items[1].id, allocatedDiscount: '0.00' },
+      ],
+    });
+
+    // Removing the line that was holding the whole discount leaves nothing
+    // the system can recompute, so the purchase waits for the user.
+    const pending = await editing.removeItem(view.id, view.items[0].id);
+    expect(pending.allocationPending).toBe(true);
+
+    // And until they answer, the month is not reported at all. Reporting it
+    // would show a period whose discount is only half attributed, with
+    // nothing on screen saying so.
+    const whilePending = await analytics.getSpending({ ...PARKED, granularity: 'MONTH' });
+    expect(whilePending.byPeriod).toEqual([]);
+
+    await editing.setDiscountAllocation(view.id, {
+      mode: 'MANUAL',
+      manualAllocation: [{ itemId: view.items[1].id, allocatedDiscount: '10.00' }],
+    });
+
+    const afterRestating = await analytics.getSpending({ ...PARKED, granularity: 'MONTH' });
+    expect(afterRestating.byPeriod).toEqual([
+      { period: '2038-02', netSpend: '30.00', discountTotal: '10.00', purchaseCount: 1 },
     ]);
   });
 

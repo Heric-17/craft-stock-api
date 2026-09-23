@@ -142,7 +142,9 @@ describe('SaleItem price basis (e2e)', () => {
     const flour = await seedFlour();
     const created = await sell(flour.id, 120, 0);
 
-    await materials.save(flour.update({ packageCost: Money.fromDecimalString('35.00') }, new Date()));
+    await materials.save(
+      flour.update({ packageCost: Money.fromDecimalString('35.00') }, new Date()),
+    );
 
     const reread = await salesService.findById(created.id);
     expect(reread.items[0].priceBasisAmount).toBe('28.00');

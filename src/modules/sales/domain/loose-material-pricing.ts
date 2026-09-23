@@ -20,10 +20,7 @@ import { InvalidSaleError } from './sale.error';
  * caller has to say so, since a silently defaulted zero sells at cost while
  * looking like a priced sale.
  */
-export function calculateLooseMaterialPriceBasis(
-  packageCost: Money,
-  marginPercent: number,
-): Money {
+export function calculateLooseMaterialPriceBasis(packageCost: Money, marginPercent: number): Money {
   if (!Number.isFinite(marginPercent) || marginPercent < 0) {
     throw new InvalidSaleError(
       'SaleItem marginPercent must be a finite number greater than or equal to zero.',

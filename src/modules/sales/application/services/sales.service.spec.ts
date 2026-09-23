@@ -255,7 +255,9 @@ describe('SalesService', () => {
       const { service } = buildService();
 
       await expect(
-        service.create(buildCreateInput({ items: [{ materialId: 'missing', quantity: 1, marginPercent: 0 }] })),
+        service.create(
+          buildCreateInput({ items: [{ materialId: 'missing', quantity: 1, marginPercent: 0 }] }),
+        ),
       ).rejects.toThrow(UnknownMaterialReferenceError);
     });
 
@@ -265,7 +267,9 @@ describe('SalesService', () => {
       await materials.save(flour);
 
       await expect(
-        service.create(buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] })),
+        service.create(
+          buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
+        ),
       ).rejects.toThrow(DiscontinuedMaterialReferenceError);
     });
   });
