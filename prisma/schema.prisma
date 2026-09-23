@@ -196,6 +196,15 @@ model Purchase {
   // Raw, immutable return of the NFC-e extraction. Never mutated after
   // creation, even when only part of the items become stock Materials.
   rawInvoiceData         Json?
+  // The establishment, in columns of its own rather than read back out of
+  // rawInvoiceData. Two reasons, and neither is convenience: a purchase
+  // entered by hand has no rawInvoiceData at all and would be invisible to
+  // every filter and ranking, and the snapshot is a frozen fact that the
+  // spending panel must not be made to depend on for a dimension it groups
+  // and filters by. merchantCnpj is the stable identity of a shop across
+  // notes; the name is what is shown, and shops do rename themselves.
+  merchantName           String?
+  merchantCnpj           String?
   // Header totals as the invoice reports them, not as a sum recomputed from
   // the lines: they are captured facts, in the same class as rawInvoiceData.
   // netTotal is what the company actually paid and is what the spending
@@ -222,6 +231,9 @@ model Purchase {
 
   // The spending dataset buckets purchases by date over a closed period.
   @@index([purchaseDate])
+  // Both the establishment filter of the listing and the establishment
+  // dimension of the dataset read this alongside the period.
+  @@index([merchantCnpj])
 }
 
 model PurchaseItem {

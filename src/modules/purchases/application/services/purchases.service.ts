@@ -9,15 +9,68 @@ import {
   type UnitOfWork,
 } from '../../../../shared/domain/persistence/unit-of-work';
 import { MaterialPriceHistory } from '../../../materials/domain/material-price-history.entity';
+import type { DiscountAllocationMode } from '../../domain/discount-allocation-mode';
+import { Establishment } from '../../domain/establishment';
 import { Purchase } from '../../domain/purchase.entity';
 import { PurchaseItem } from '../../domain/purchase-item.entity';
-import { InvalidPurchaseError, UnknownMaterialReferenceError } from '../../domain/purchase.error';
-import type { PurchaseView, RegisterInvoicePurchaseInput } from '../dto/purchases.dto';
+import {
+  InvalidPurchaseError,
+  PurchaseNotFoundError,
+  UnknownMaterialReferenceError,
+} from '../../domain/purchase.error';
+import {
+  PURCHASE_REPOSITORY,
+  type PurchaseRepository,
+} from '../../domain/repositories/purchase.repository';
+import type {
+  EstablishmentInput,
+  InvoiceLineInput,
+  PurchaseDetailView,
+  PurchaseListInput,
+  PurchasePageView,
+  PurchaseView,
+  RegisterInvoicePurchaseInput,
+  RegisterManualPurchaseInput,
+} from '../dto/purchases.dto';
 import { PurchaseViewMapper } from '../mappers/purchase-view.mapper';
 
 @Injectable()
 export class PurchasesService {
-  constructor(@Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork) {}
+  constructor(
+    @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
+    @Inject(PURCHASE_REPOSITORY) private readonly purchases: PurchaseRepository,
+  ) {}
+
+  /**
+   * One page of the history, newest first, narrowed by period and by shop.
+   *
+   * Paging is the documented answer to a long list and only to that. It is
+   * deliberately not how the spending panel is fed: a page of rows cannot be
+   * folded into the totals of a period, so the panel reads the aggregated
+   * dataset instead.
+   */
+  async list(input: PurchaseListInput): Promise<PurchasePageView> {
+    const page = await this.purchases.findPage({
+      ...(input.from !== undefined ? { from: input.from } : {}),
+      ...(input.to !== undefined ? { to: input.to } : {}),
+      ...(input.establishmentId !== undefined ? { establishmentId: input.establishmentId } : {}),
+      limit: input.limit,
+      offset: input.offset,
+    });
+
+    return PurchaseViewMapper.toPageView(page);
+  }
+
+  /** The purchase with its lines and the captured note, exactly as captured. */
+  async getById(id: string): Promise<PurchaseDetailView> {
+    const purchase = await this.purchases.findById(id);
+
+    if (purchase === null) {
+      throw new PurchaseNotFoundError(`Purchase ${id} does not exist.`);
+    }
+
+    return PurchaseViewMapper.toDetailView(purchase);
+  }
 
   /**
    * Records an invoice as a `Purchase`, with both sides of every line, and
@@ -28,37 +81,9 @@ export class PurchasesService {
    * that silently prices products off yesterday's costs.
    */
   async registerInvoicePurchase(input: RegisterInvoicePurchaseInput): Promise<PurchaseView> {
-    const now = new Date();
     const grossTotal = Money.fromDecimalString(input.grossTotal);
-    const discountTotal = Money.fromDecimalString(input.discountTotal);
-    const netTotal = grossTotal.minus(discountTotal);
-
-    if (input.lines.length === 0) {
-      throw new InvalidPurchaseError('An invoice purchase must have at least one line.');
-    }
-
-    const purchaseId = randomUUID();
-
-    const items = input.lines.map(
-      (line) =>
-        new PurchaseItem({
-          id: randomUUID(),
-          purchaseId,
-          code: line.code ?? null,
-          description: line.description,
-          quantity: line.quantity,
-          unit: line.unit ?? null,
-          unitPrice: Money.fromDecimalString(line.unitPrice),
-          grossValue: Money.fromDecimalString(line.grossValue),
-          // Attributed by the root below, once every line is in place.
-          allocatedDiscount: Money.zero(),
-          isCompanyExpense: line.isCompanyExpense,
-          isStockMaterial: line.materialId !== null,
-          materialId: line.materialId,
-        }),
-    );
-
-    const linesTotal = items.reduce((total, item) => total.plus(item.grossValue), Money.zero());
+    const items = this.buildItems(input.lines);
+    const linesTotal = sumGross(items);
 
     // The header totals are captured from the note, not recomputed from the
     // lines — so they are checked against them instead. A header that does not
@@ -71,34 +96,103 @@ export class PurchasesService {
       );
     }
 
-    const mode = input.discountAllocationMode ?? 'PROPORTIONAL';
+    return this.register({
+      purchaseDate: input.purchaseDate,
+      accessKey: input.accessKey,
+      rawInvoiceData: input.rawInvoiceData,
+      establishment: input.establishment ?? null,
+      grossTotal,
+      discountTotal: Money.fromDecimalString(input.discountTotal),
+      mode: input.discountAllocationMode ?? 'PROPORTIONAL',
+      items,
+    });
+  }
+
+  /**
+   * Records a purchase the user typed in, with no note behind it.
+   *
+   * It differs from an imported one in what it lacks and nothing else: no
+   * access key to deduplicate against, and no `rawInvoiceData`, because there
+   * is no captured document to freeze. The header total is therefore the sum
+   * of the lines — there is no issuer's figure to check them against, so
+   * there is nothing for them to disagree with.
+   *
+   * The cost policy is the same one: every line reports its gross package
+   * cost to the `Material` it names, and the `Material` takes it only when it
+   * is an increase. Bringing the quantities into stock stays a separate
+   * operation, as it is for an imported note, because it needs the
+   * `packageQuantity` that only the user can give.
+   */
+  async registerManualPurchase(input: RegisterManualPurchaseInput): Promise<PurchaseView> {
+    const items = this.buildItems(input.lines);
+
+    return this.register({
+      purchaseDate: input.purchaseDate,
+      accessKey: null,
+      rawInvoiceData: null,
+      establishment: input.establishment ?? null,
+      grossTotal: sumGross(items),
+      discountTotal:
+        input.discountTotal === undefined
+          ? Money.zero()
+          : Money.fromDecimalString(input.discountTotal),
+      mode: input.discountAllocationMode ?? 'PROPORTIONAL',
+      items,
+    });
+  }
+
+  /**
+   * The one path that creates a purchase, whichever way its lines arrived.
+   *
+   * The purchase is built with its discount unattributed and attributed by
+   * the root immediately afterwards, so there is exactly one piece of code in
+   * the system that decides where a discount lands.
+   */
+  private async register(input: {
+    purchaseDate: Date;
+    accessKey: string | null;
+    rawInvoiceData: Record<string, unknown> | null;
+    establishment: EstablishmentInput | null;
+    grossTotal: Money;
+    discountTotal: Money;
+    mode: DiscountAllocationMode;
+    items: PurchaseItem[];
+  }): Promise<PurchaseView> {
+    if (input.items.length === 0) {
+      throw new InvalidPurchaseError('A purchase must have at least one line.');
+    }
 
     // MANUAL attributes by line id, and the ids are minted right here, so the
     // caller has nothing to key its amounts to. Typing them is an operation on
-    // an existing purchase — `changeDiscountAllocation` through the
-    // classification endpoint — not part of creating one.
-    if (mode === 'MANUAL') {
+    // an existing purchase — `setDiscountAllocation` — and not part of
+    // creating one.
+    if (input.mode === 'MANUAL') {
       throw new InvalidPurchaseError(
         'MANUAL discount allocation cannot be chosen while the purchase is being created: its line ids do not exist yet. Create the purchase, then set the allocation on it.',
       );
     }
 
-    // Built with the discount unattributed and attributed by the root, so
-    // there is exactly one piece of code in the system that decides where a
-    // note's discount lands.
+    const now = new Date();
     const purchase = new Purchase({
-      id: purchaseId,
+      id: input.items[0].purchaseId,
       purchaseDate: input.purchaseDate,
       accessKey: input.accessKey,
       rawInvoiceData: input.rawInvoiceData,
-      grossTotal,
-      discountTotal,
-      netTotal,
-      discountAllocationMode: mode,
-      allocationPending: !discountTotal.isZero(),
-      items,
+      establishment:
+        input.establishment === null
+          ? null
+          : new Establishment({
+              name: input.establishment.name,
+              cnpj: input.establishment.cnpj ?? null,
+            }),
+      grossTotal: input.grossTotal,
+      discountTotal: input.discountTotal,
+      netTotal: input.grossTotal.minus(input.discountTotal),
+      discountAllocationMode: input.mode,
+      allocationPending: !input.discountTotal.isZero(),
+      items: input.items,
       createdAt: now,
-    }).changeDiscountAllocation(mode);
+    }).changeDiscountAllocation(input.mode);
 
     await this.unitOfWork.runInTransaction(async (ctx) => {
       await ctx.purchases.save(purchase);
@@ -109,6 +203,29 @@ export class PurchasesService {
     });
 
     return PurchaseViewMapper.toView(purchase);
+  }
+
+  private buildItems(lines: readonly InvoiceLineInput[]): PurchaseItem[] {
+    const purchaseId = randomUUID();
+
+    return lines.map(
+      (line) =>
+        new PurchaseItem({
+          id: randomUUID(),
+          purchaseId,
+          code: line.code ?? null,
+          description: line.description,
+          quantity: line.quantity,
+          unit: line.unit ?? null,
+          unitPrice: Money.fromDecimalString(line.unitPrice),
+          grossValue: Money.fromDecimalString(line.grossValue),
+          // Attributed by the root once every line is in place.
+          allocatedDiscount: Money.zero(),
+          isCompanyExpense: line.isCompanyExpense,
+          isStockMaterial: line.materialId !== null,
+          materialId: line.materialId,
+        }),
+    );
   }
 
   /**
@@ -131,7 +248,7 @@ export class PurchasesService {
 
     if (!material) {
       throw new UnknownMaterialReferenceError(
-        `Invoice line "${item.description}" references Material ${item.materialId}, which does not exist.`,
+        `Purchase line "${item.description}" references Material ${item.materialId}, which does not exist.`,
       );
     }
 
@@ -153,4 +270,8 @@ export class PurchasesService {
       }),
     );
   }
+}
+
+function sumGross(items: readonly PurchaseItem[]): Money {
+  return items.reduce((total, item) => total.plus(item.grossValue), Money.zero());
 }

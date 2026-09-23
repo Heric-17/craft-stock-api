@@ -1,4 +1,5 @@
 import { Money } from '../../../shared/domain/money/money';
+import type { Establishment } from './establishment';
 import {
   allocateDiscount,
   eligibleLines,
@@ -37,6 +38,12 @@ export interface PurchaseProps {
   accessKey: string | null;
   /** Raw, immutable return of the NFC-e extraction. Never mutated after creation. */
   rawInvoiceData: Record<string, unknown> | null;
+  /**
+   * The shop this was bought at, or null when none was recorded. Captured
+   * once, beside the snapshot rather than inside it, so that a purchase
+   * entered by hand is as findable as an imported one.
+   */
+  establishment: Establishment | null;
   /** Sum of the lines at full price — the replacement-cost side of the note. */
   grossTotal: Money;
   /** Discount the note granted over the whole purchase. */
@@ -72,6 +79,7 @@ export class Purchase {
   readonly purchaseDate: Date;
   readonly accessKey: string | null;
   readonly rawInvoiceData: Record<string, unknown> | null;
+  readonly establishment: Establishment | null;
   readonly grossTotal: Money;
   readonly discountTotal: Money;
   readonly netTotal: Money;
@@ -131,7 +139,12 @@ export class Purchase {
     this.id = props.id;
     this.purchaseDate = props.purchaseDate;
     this.accessKey = props.accessKey;
-    this.rawInvoiceData = props.rawInvoiceData;
+    // Frozen, not merely never reassigned. The snapshot is what the card
+    // statement is checked against, so "editing the items does not touch it"
+    // has to hold against a caller reaching into the object as well, not only
+    // against one replacing it.
+    this.rawInvoiceData = props.rawInvoiceData === null ? null : deepFreeze(props.rawInvoiceData);
+    this.establishment = props.establishment;
     this.grossTotal = props.grossTotal;
     this.discountTotal = props.discountTotal;
     this.netTotal = props.netTotal;
@@ -407,6 +420,7 @@ export class Purchase {
       purchaseDate: this.purchaseDate,
       accessKey: this.accessKey,
       rawInvoiceData: this.rawInvoiceData,
+      establishment: this.establishment,
       grossTotal: this.grossTotal,
       discountTotal: this.discountTotal,
       netTotal: this.netTotal,
@@ -417,6 +431,23 @@ export class Purchase {
       ...changes,
     });
   }
+}
+
+/**
+ * Freezes the captured note, nested objects and arrays included. A shallow
+ * freeze would leave every list of items inside it writable, which is most of
+ * what the snapshot is.
+ */
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    deepFreeze(nested);
+  }
+
+  return Object.freeze(value);
 }
 
 function sumGross(items: readonly PurchaseItem[]): Money {

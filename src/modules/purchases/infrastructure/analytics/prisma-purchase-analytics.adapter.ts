@@ -1,20 +1,31 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { Money } from '../../../../shared/domain/money/money';
+import { toDomainMoney } from '../../../../shared/infrastructure/persistence/money.mapper';
 import type { Prisma } from '../../../../shared/infrastructure/prisma/generated/client';
 import { PrismaService } from '../../../../shared/infrastructure/prisma/prisma.service';
+import { establishmentIdOf } from '../../domain/establishment';
 import type {
   PurchaseAnalyticsPort,
+  SpendingByEstablishment,
   SpendingByPeriod,
-  SpendingByPeriodQuery,
-  SpendingGranularity,
+  SpendingDataset,
+  SpendingDatasetQuery,
+  SpendingTotals,
 } from '../../domain/ports/purchase-analytics.port';
+import { formatSpendingPeriod } from '../../domain/spending-period';
+import { toWhere } from '../persistence/prisma-purchase.repository';
 
-/** Shape of one aggregated row as Postgres returns it. */
-interface SpendingRow {
-  bucket: Date | string;
-  netSpend: Prisma.Decimal | string | number | null;
-  discountTotal: Prisma.Decimal | string | number | null;
+/** The purchase attributes the dataset groups by, and nothing else. */
+interface PurchaseDimensions {
+  purchaseDate: Date;
+  merchantName: string | null;
+  merchantCnpj: string | null;
+}
+
+/** A slice being accumulated. `Money` is immutable, so each add replaces it. */
+interface Accumulator extends SpendingTotals {
+  establishmentName: string | null;
 }
 
 @Injectable()
@@ -22,63 +33,131 @@ export class PrismaPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
   constructor(@Inject(PrismaService) private readonly prisma: Prisma.TransactionClient) {}
 
   /**
-   * Both figures are summed over the company-expense lines, in one pass.
+   * The whole spending dataset, in two queries: what each purchase's company
+   * lines add up to, and the attributes those sums are grouped by.
    *
-   * Spending is `grossValue − allocatedDiscount` per line, which is the line's
-   * net value — derived here rather than read from a column, exactly as the
-   * domain derives it.
+   * The per-purchase sums come from `groupBy` with `_sum`, filtered through
+   * the relation so the period predicate is applied in the database rather
+   * than by handing it a list of ids. It groups by `purchaseId` and not
+   * straight into months because the two figures wanted are sums of an
+   * expression — `grossValue − allocatedDiscount` — over a column that lives
+   * on the other table, and neither of those is something `groupBy` can
+   * express. Summing the two columns separately and subtracting is exact,
+   * both being decimals, and the fold into periods and shops happens here
+   * over one row per purchase.
    *
-   * Savings is the sum of `allocatedDiscount` over those same lines, and
-   * deliberately not the notes' `discountTotal`: counting the whole header
-   * discount would credit the company with savings obtained on a personal
-   * item sharing the same note.
-   *
-   * Purchases whose manual attribution is still pending are left out. Their
-   * discount is only partly attributed, so including them would report a
-   * period as having spent more than it did, with nothing to show for it.
+   * Two filters are load-bearing. Only company-expense lines are counted:
+   * the panel answers what left the business's till, so a personal item on
+   * the same note contributes neither spending nor saving. And purchases
+   * whose `MANUAL` attribution is still pending are excluded, because only
+   * part of their discount has been placed and the period would report a
+   * figure that is wrong and looks complete.
    */
-  async spendingByPeriod(query: SpendingByPeriodQuery): Promise<SpendingByPeriod[]> {
-    const unit = query.granularity === 'MONTH' ? 'month' : 'day';
+  async spendingDataset(query: SpendingDatasetQuery): Promise<SpendingDataset> {
+    const purchaseWhere: Prisma.PurchaseWhereInput = {
+      ...toWhere({ from: query.from, to: query.to, establishmentId: query.establishmentId }),
+      allocationPending: false,
+    };
 
-    const rows = await this.prisma.$queryRaw<SpendingRow[]>`
-      SELECT
-        date_trunc(${unit}::text, p."purchaseDate") AS "bucket",
-        COALESCE(SUM(i."grossValue" - i."allocatedDiscount"), 0) AS "netSpend",
-        COALESCE(SUM(i."allocatedDiscount"), 0) AS "discountTotal"
-      FROM "PurchaseItem" AS i
-      JOIN "Purchase" AS p ON p."id" = i."purchaseId"
-      WHERE p."purchaseDate" >= ${query.from}
-        AND p."purchaseDate" < ${query.to}
-        AND p."allocationPending" = FALSE
-        AND i."isCompanyExpense" = TRUE
-      GROUP BY 1
-      ORDER BY 1
-    `;
+    const [sums, purchases] = await Promise.all([
+      this.prisma.purchaseItem.groupBy({
+        by: ['purchaseId'],
+        where: { isCompanyExpense: true, purchase: purchaseWhere },
+        _sum: { grossValue: true, allocatedDiscount: true },
+      }),
+      this.prisma.purchase.findMany({
+        where: purchaseWhere,
+        select: { id: true, purchaseDate: true, merchantName: true, merchantCnpj: true },
+      }),
+    ]);
 
-    return rows.map((row) => ({
-      period: formatPeriod(row.bucket, query.granularity),
-      netSpend: toMoney(row.netSpend),
-      discountTotal: toMoney(row.discountTotal),
-    }));
+    const dimensions = new Map<string, PurchaseDimensions>(
+      purchases.map((purchase) => [purchase.id, purchase]),
+    );
+
+    const byPeriod = new Map<string, Accumulator>();
+    const byEstablishment = new Map<string, Accumulator>();
+
+    for (const row of sums) {
+      const purchase = dimensions.get(row.purchaseId);
+
+      // The two queries are filtered identically, so this can only happen if
+      // a purchase was written between them. It contributes nothing rather
+      // than landing in a bucket whose period is unknown.
+      if (purchase === undefined) {
+        continue;
+      }
+
+      const gross =
+        row._sum.grossValue === null ? Money.zero() : toDomainMoney(row._sum.grossValue);
+      const discount =
+        row._sum.allocatedDiscount === null
+          ? Money.zero()
+          : toDomainMoney(row._sum.allocatedDiscount);
+      const totals = { netSpend: gross.minus(discount), discountTotal: discount };
+
+      const establishmentId = establishmentIdOf(purchase.merchantName, purchase.merchantCnpj);
+
+      accumulate(
+        byPeriod,
+        formatSpendingPeriod(purchase.purchaseDate, query.granularity),
+        totals,
+        null,
+      );
+      accumulate(byEstablishment, establishmentId ?? '', totals, purchase.merchantName);
+    }
+
+    return {
+      from: query.from,
+      to: query.to,
+      granularity: query.granularity,
+      byPeriod: toPeriodDimension(byPeriod),
+      byEstablishment: toEstablishmentDimension(byEstablishment),
+    };
   }
 }
 
-/**
- * A raw aggregate arrives as whatever the driver decided to hand back for a
- * `numeric` — `Decimal`, string or number. All three carry the same digits,
- * and the decimal string is the one representation `Money` accepts without
- * passing through a float.
- */
-function toMoney(value: Prisma.Decimal | string | number | null): Money {
-  if (value === null) {
-    return Money.zero();
+function accumulate(
+  buckets: Map<string, Accumulator>,
+  key: string,
+  totals: { netSpend: Money; discountTotal: Money },
+  establishmentName: string | null,
+): void {
+  const current = buckets.get(key);
+
+  if (current === undefined) {
+    buckets.set(key, { ...totals, purchaseCount: 1, establishmentName });
+    return;
   }
 
-  return Money.fromDecimalString(value.toString());
+  buckets.set(key, {
+    netSpend: current.netSpend.plus(totals.netSpend),
+    discountTotal: current.discountTotal.plus(totals.discountTotal),
+    purchaseCount: current.purchaseCount + 1,
+    establishmentName: current.establishmentName ?? establishmentName,
+  });
 }
 
-function formatPeriod(bucket: Date | string, granularity: SpendingGranularity): string {
-  const iso = bucket instanceof Date ? bucket.toISOString() : new Date(bucket).toISOString();
+function toPeriodDimension(buckets: Map<string, Accumulator>): SpendingByPeriod[] {
+  return [...buckets.entries()]
+    .map(([period, totals]) => ({
+      period,
+      netSpend: totals.netSpend,
+      discountTotal: totals.discountTotal,
+      purchaseCount: totals.purchaseCount,
+    }))
+    .sort((a, b) => a.period.localeCompare(b.period));
+}
 
-  return granularity === 'MONTH' ? iso.slice(0, 7) : iso.slice(0, 10);
+/** Ranked by what was spent, which is the order the panel reads it in. */
+function toEstablishmentDimension(buckets: Map<string, Accumulator>): SpendingByEstablishment[] {
+  return [...buckets.entries()]
+    .map(([establishmentId, totals]) => ({
+      establishmentId: establishmentId === '' ? null : establishmentId,
+      establishmentName: totals.establishmentName,
+      netSpend: totals.netSpend,
+      discountTotal: totals.discountTotal,
+      purchaseCount: totals.purchaseCount,
+    }))
+    .sort((a, b) => b.netSpend.toCents() - a.netSpend.toCents());
 }

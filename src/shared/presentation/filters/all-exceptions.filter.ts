@@ -12,6 +12,7 @@ import {
   InvoiceSourceUnavailableError,
   InvoiceStructureChangedError,
 } from '../../../modules/invoices/domain/invoice.error';
+import { PurchaseNotFoundError } from '../../../modules/purchases/domain/purchase.error';
 import { DomainError } from '../../domain/errors/domain.error';
 import { RequestContextService } from '../../infrastructure/logging/request-context.service';
 import { StructuredLogger } from '../../infrastructure/logging/structured-logger.service';
@@ -44,6 +45,9 @@ const DOMAIN_ERROR_STATUS: readonly {
   // The note is already recorded. Not a failure: the client is told where the
   // purchase it was about to duplicate already lives.
   { error: DuplicateInvoiceError, status: HttpStatus.CONFLICT },
+  // The purchase addressed does not exist. Nothing about the request is
+  // wrong beyond the id it names, which is what 404 says.
+  { error: PurchaseNotFoundError, status: HttpStatus.NOT_FOUND },
   // The state portal is down. Nothing is wrong with the request, and it is
   // worth making again later — which is what the pending queue is for.
   { error: InvoiceSourceUnavailableError, status: HttpStatus.SERVICE_UNAVAILABLE },

@@ -42,6 +42,7 @@ function purchase(overrides: Partial<PurchaseProps> = {}): Purchase {
     purchaseDate: new Date('2026-06-11T21:46:31Z'),
     accessKey: null,
     rawInvoiceData: null,
+    establishment: null,
     grossTotal,
     discountTotal,
     netTotal: grossTotal.minus(discountTotal),

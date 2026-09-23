@@ -84,12 +84,19 @@ export class InvoiceViewMapper {
 }
 
 /**
- * The merchant's name comes out of the frozen extraction rather than a column
- * of its own. `rawInvoiceData` is the captured note and is never rewritten,
- * so reading it back is reading what the note said at the time — which is the
- * whole reason it is kept.
+ * The merchant's name, from the column the purchase records it in, falling
+ * back to the frozen extraction.
+ *
+ * The fallback is not redundancy: purchases recorded before the
+ * establishment had columns of its own carry the name only inside
+ * `rawInvoiceData`, and the captured note is never rewritten, so reading it
+ * back is reading what the note said at the time.
  */
 function readMerchantName(purchase: Purchase): string | null {
+  if (purchase.establishment !== null) {
+    return purchase.establishment.name;
+  }
+
   const name = purchase.rawInvoiceData?.merchantName;
 
   return typeof name === 'string' ? name : null;

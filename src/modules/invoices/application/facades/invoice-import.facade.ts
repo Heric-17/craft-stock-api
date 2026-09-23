@@ -6,6 +6,7 @@ import { EnvService } from '../../../../config/env.service';
 import { Money } from '../../../../shared/domain/money/money';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
 import { StructuredLogger } from '../../../../shared/infrastructure/logging/structured-logger.service';
+import { Establishment } from '../../../purchases/domain/establishment';
 import { Purchase } from '../../../purchases/domain/purchase.entity';
 import { PurchaseItem } from '../../../purchases/domain/purchase-item.entity';
 import { aggregateInvoiceItems } from '../../domain/invoice-item-aggregation';
@@ -230,6 +231,10 @@ export class InvoiceImportFacade {
       purchaseDate: invoice.issuedAt,
       accessKey: invoice.accessKey,
       rawInvoiceData: RawInvoiceSnapshotMapper.toSnapshot(invoice),
+      // Also kept in columns of its own, beside the snapshot: the spending
+      // panel groups and filters by the shop, and a dimension it reads must
+      // not depend on digging through a frozen JSON document.
+      establishment: new Establishment({ name: invoice.merchantName, cnpj: invoice.cnpj }),
       grossTotal: invoice.grossTotal,
       discountTotal: invoice.discountTotal,
       netTotal: invoice.netTotal,

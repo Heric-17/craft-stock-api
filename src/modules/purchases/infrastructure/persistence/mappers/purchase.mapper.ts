@@ -7,6 +7,7 @@ import type {
   PurchaseModel,
 } from '../../../../../shared/infrastructure/prisma/generated/models';
 import { Prisma } from '../../../../../shared/infrastructure/prisma/generated/client';
+import { Establishment } from '../../../domain/establishment';
 import { Purchase } from '../../../domain/purchase.entity';
 import { PurchaseItemMapper } from './purchase-item.mapper';
 
@@ -20,6 +21,10 @@ export class PurchaseMapper {
       purchaseDate: row.purchaseDate,
       accessKey: row.accessKey,
       rawInvoiceData: row.rawInvoiceData as Record<string, unknown> | null,
+      establishment:
+        row.merchantName === null
+          ? null
+          : new Establishment({ name: row.merchantName, cnpj: row.merchantCnpj }),
       grossTotal: toDomainMoney(row.grossTotal),
       discountTotal: toDomainMoney(row.discountTotal),
       netTotal: toDomainMoney(row.netTotal),
@@ -37,18 +42,44 @@ export class PurchaseMapper {
   static toPersistence(purchase: Purchase): Prisma.PurchaseUncheckedCreateInput {
     return {
       id: purchase.id,
-      purchaseDate: purchase.purchaseDate,
       accessKey: purchase.accessKey,
       rawInvoiceData:
         purchase.rawInvoiceData === null
           ? Prisma.JsonNull
           : (purchase.rawInvoiceData as Prisma.InputJsonValue),
+      createdAt: purchase.createdAt,
+      purchaseDate: purchase.purchaseDate,
+      merchantName: purchase.establishment?.name ?? null,
+      merchantCnpj: purchase.establishment?.cnpj ?? null,
       grossTotal: toPersistenceDecimal(purchase.grossTotal),
       discountTotal: toPersistenceDecimal(purchase.discountTotal),
       netTotal: toPersistenceDecimal(purchase.netTotal),
       discountAllocationMode: purchase.discountAllocationMode,
       allocationPending: purchase.allocationPending,
-      createdAt: purchase.createdAt,
+    };
+  }
+
+  /**
+   * What an existing purchase is allowed to have rewritten.
+   *
+   * `rawInvoiceData` is absent, and that is the whole point of the method
+   * existing: the captured note is what the user reconciles against the card
+   * statement, so it is written once, at insert, and never appears in an
+   * UPDATE at all. Editing the lines cannot touch it — not because no code
+   * path happens to, but because the column is not in the statement.
+   * `accessKey` and `createdAt` are left out for the same reason: they are
+   * facts of the capture, not state of the purchase.
+   */
+  static toPersistenceUpdate(purchase: Purchase): Prisma.PurchaseUncheckedUpdateInput {
+    return {
+      purchaseDate: purchase.purchaseDate,
+      merchantName: purchase.establishment?.name ?? null,
+      merchantCnpj: purchase.establishment?.cnpj ?? null,
+      grossTotal: toPersistenceDecimal(purchase.grossTotal),
+      discountTotal: toPersistenceDecimal(purchase.discountTotal),
+      netTotal: toPersistenceDecimal(purchase.netTotal),
+      discountAllocationMode: purchase.discountAllocationMode,
+      allocationPending: purchase.allocationPending,
     };
   }
 }

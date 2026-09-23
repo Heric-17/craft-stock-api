@@ -9,7 +9,11 @@ import { Material } from '../../../materials/domain/material.entity';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
-import { InvalidPurchaseError, UnknownMaterialReferenceError } from '../../domain/purchase.error';
+import {
+  InvalidPurchaseError,
+  PurchaseNotFoundError,
+  UnknownMaterialReferenceError,
+} from '../../domain/purchase.error';
 import { InMemoryPurchaseRepository } from '../../infrastructure/persistence/in-memory-purchase.repository';
 import type { InvoiceLineInput, RegisterInvoicePurchaseInput } from '../dto/purchases.dto';
 import { PurchasesService } from './purchases.service';
@@ -30,7 +34,11 @@ function buildService(): {
     users: new InMemoryUserRepository(),
   };
 
-  return { service: new PurchasesService(new InMemoryUnitOfWork(context)), materials, purchases };
+  return {
+    service: new PurchasesService(new InMemoryUnitOfWork(context), purchases),
+    materials,
+    purchases,
+  };
 }
 
 function buildMaterial(
@@ -246,5 +254,181 @@ describe('PurchasesService.registerInvoicePurchase', () => {
         buildInvoice([buildLine({ materialId: 'a4d1b0e4-0000-4000-8000-000000000000' })]),
       ),
     ).rejects.toThrow(UnknownMaterialReferenceError);
+  });
+});
+
+describe('PurchasesService.registerManualPurchase', () => {
+  it('records a purchase with no note behind it, totalled from its own lines', async () => {
+    const { service } = buildService();
+
+    const view = await service.registerManualPurchase({
+      purchaseDate: new Date('2026-09-10T12:00:00Z'),
+      establishment: { name: 'Feira do bairro' },
+      lines: [
+        buildLine({ description: 'Ovos', grossValue: '18.00', unitPrice: '18.00' }),
+        buildLine({ description: 'Leite', grossValue: '7.50', unitPrice: '7.50' }),
+      ],
+    });
+
+    // No access key to deduplicate against and no captured note to freeze:
+    // that is the whole of what a manual entry lacks.
+    expect(view.accessKey).toBeNull();
+    expect(view.grossTotal).toBe('25.50');
+    expect(view.netTotal).toBe('25.50');
+    // With no CNPJ, the name the user typed is the shop's identity, and it is
+    // what the panel and the listing group by.
+    expect(view.establishment).toEqual({
+      id: 'Feira do bairro',
+      name: 'Feira do bairro',
+      cnpj: null,
+    });
+  });
+
+  it('attributes a discount on a manual purchase the same way a note is attributed', async () => {
+    const { service } = buildService();
+
+    const view = await service.registerManualPurchase({
+      purchaseDate: new Date('2026-09-10T12:00:00Z'),
+      discountTotal: '5.00',
+      lines: [
+        buildLine({ grossValue: '60.00', unitPrice: '60.00' }),
+        buildLine({ grossValue: '40.00', unitPrice: '40.00' }),
+      ],
+    });
+
+    expect(view.items.map((item) => item.allocatedDiscount)).toEqual(['3.00', '2.00']);
+    expect(view.netTotal).toBe('95.00');
+  });
+
+  it('feeds the gross package cost into the Material a line names', async () => {
+    const { service, materials } = buildService();
+    const material = buildMaterial({ packageCost: Money.fromDecimalString('10.00') });
+    await materials.save(material);
+
+    await service.registerManualPurchase({
+      purchaseDate: new Date('2026-09-10T12:00:00Z'),
+      discountTotal: '5.00',
+      lines: [buildLine({ grossValue: '20.00', unitPrice: '20.00', materialId: material.id })],
+    });
+
+    // The gross side, in every allocation mode: what restocking costs, not
+    // what this one purchase happened to pay after its discount.
+    const updated = await materials.findById(material.id);
+    expect(updated?.packageCost.toDecimalString()).toBe('20.00');
+  });
+
+  it('refuses MANUAL attribution at creation, when the line ids do not exist yet', async () => {
+    const { service } = buildService();
+
+    await expect(
+      service.registerManualPurchase({
+        purchaseDate: new Date('2026-09-10T12:00:00Z'),
+        discountTotal: '5.00',
+        discountAllocationMode: 'MANUAL',
+        lines: [buildLine()],
+      }),
+    ).rejects.toThrow(InvalidPurchaseError);
+  });
+});
+
+describe('PurchasesService.list', () => {
+  async function seed(service: PurchasesService): Promise<void> {
+    const shops = [
+      { date: '2026-09-01T10:00:00Z', name: 'ATACADAO S.A.', cnpj: '75.315.333/0088-60' },
+      { date: '2026-09-05T10:00:00Z', name: 'ATACADAO S.A.', cnpj: '75.315.333/0088-60' },
+      { date: '2026-09-09T10:00:00Z', name: 'Feira do bairro', cnpj: null },
+      { date: '2026-10-02T10:00:00Z', name: 'ATACADAO S.A.', cnpj: '75.315.333/0088-60' },
+    ];
+
+    for (const shop of shops) {
+      await service.registerManualPurchase({
+        purchaseDate: new Date(shop.date),
+        establishment: { name: shop.name, cnpj: shop.cnpj },
+        lines: [buildLine()],
+      });
+    }
+  }
+
+  it('returns a page of the history, newest first, with the size of the whole set', async () => {
+    const { service } = buildService();
+    await seed(service);
+
+    const page = await service.list({ limit: 2, offset: 0 });
+
+    expect(page.total).toBe(4);
+    expect(page.items).toHaveLength(2);
+    expect(page.items.map((item) => item.purchaseDate.toISOString())).toEqual([
+      '2026-10-02T10:00:00.000Z',
+      '2026-09-09T10:00:00.000Z',
+    ]);
+    // The rows carry their totals and how many lines they hold; opening one
+    // up is what the detail endpoint is for.
+    expect(page.items[0].itemCount).toBe(1);
+    expect(page.items[0].hasInvoice).toBe(false);
+  });
+
+  it('walks the history through the offset without repeating or skipping a row', async () => {
+    const { service } = buildService();
+    await seed(service);
+
+    const first = await service.list({ limit: 3, offset: 0 });
+    const second = await service.list({ limit: 3, offset: 3 });
+
+    expect(second.items).toHaveLength(1);
+    expect(new Set([...first.items, ...second.items].map((item) => item.id)).size).toBe(4);
+  });
+
+  it('narrows the history by period', async () => {
+    const { service } = buildService();
+    await seed(service);
+
+    const page = await service.list({
+      from: new Date('2026-09-01T00:00:00Z'),
+      to: new Date('2026-10-01T00:00:00Z'),
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(page.total).toBe(3);
+  });
+
+  it('narrows the history by establishment, keyed as the dataset reports it', async () => {
+    const { service } = buildService();
+    await seed(service);
+
+    const byCnpj = await service.list({
+      establishmentId: '75.315.333/0088-60',
+      limit: 20,
+      offset: 0,
+    });
+    const byName = await service.list({ establishmentId: 'Feira do bairro', limit: 20, offset: 0 });
+
+    expect(byCnpj.total).toBe(3);
+    expect(byName.total).toBe(1);
+  });
+});
+
+describe('PurchasesService.getById', () => {
+  it('hands back the lines and the captured note exactly as captured', async () => {
+    const { service } = buildService();
+    const rawInvoiceData = { merchantName: 'ATACADAO S.A.', grossTotal: '10.00' };
+
+    const created = await service.registerInvoicePurchase({
+      ...buildInvoice([buildLine({ grossValue: '10.00', unitPrice: '10.00' })]),
+      rawInvoiceData,
+    });
+
+    const detail = await service.getById(created.id);
+
+    expect(detail.rawInvoiceData).toEqual(rawInvoiceData);
+    expect(detail.items).toHaveLength(1);
+  });
+
+  it('reports a purchase that does not exist', async () => {
+    const { service } = buildService();
+
+    await expect(service.getById('0f4b2f8c-1d3e-4a5b-8c7d-9e0f1a2b3c4d')).rejects.toThrow(
+      PurchaseNotFoundError,
+    );
   });
 });

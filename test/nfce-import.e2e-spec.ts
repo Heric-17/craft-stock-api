@@ -260,6 +260,6 @@ describe('NFC-e import (e2e)', () => {
     // Both imported notes fall in June 2026; the figures are whatever the
     // other rows of this month contribute plus ours, so only the shape and
     // the presence of the bucket are asserted here.
-    expect(dataset.some((bucket) => bucket.period === '2026-06')).toBe(true);
+    expect(dataset.byPeriod.some((bucket) => bucket.period === '2026-06')).toBe(true);
   });
 });

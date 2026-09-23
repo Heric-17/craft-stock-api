@@ -88,6 +88,7 @@ async function seedPurchase(
     purchaseDate: new Date('2026-06-11T21:46:31Z'),
     accessKey: null,
     rawInvoiceData: { merchantName: 'ATACADAO S.A.' },
+    establishment: null,
     grossTotal: money('120.00'),
     discountTotal,
     netTotal: money('120.00').minus(discountTotal),
