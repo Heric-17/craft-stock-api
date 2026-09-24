@@ -12,6 +12,7 @@ import {
 } from '../src/modules/materials/domain/repositories/material.repository';
 import type { PurchaseView } from '../src/modules/purchases/application/dto/purchases.dto';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
+import { authenticate } from './support/authenticate';
 
 /**
  * A purchase typed in by hand becomes stock through the same classification
@@ -29,6 +30,8 @@ describe('Manual purchase becoming stock (e2e)', () => {
   let server: Server;
   let materials: MaterialRepository;
   let prisma: PrismaService;
+  let authHeader: string;
+  let actorUserId: string;
 
   const createdPurchaseIds: string[] = [];
   const createdMaterialIds: string[] = [];
@@ -43,6 +46,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
     server = app.getHttpServer() as Server;
     materials = moduleRef.get(MATERIAL_REPOSITORY);
     prisma = moduleRef.get(PrismaService);
+    ({ authHeader, userId: actorUserId } = await authenticate(moduleRef, server));
   });
 
   afterAll(async () => {
@@ -54,6 +58,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
       await prisma.materialPriceHistory.deleteMany({ where: { materialId } });
       await prisma.material.deleteMany({ where: { id: materialId } });
     }
+    await prisma.user.deleteMany({ where: { id: actorUserId } });
 
     await app.close();
   });
@@ -61,6 +66,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
   it('creates the Material and brings the quantity into stock', async () => {
     const created = await request(server)
       .post('/purchases')
+      .set('Authorization', authHeader)
       .send({
         purchaseDate: '2039-04-02T10:00:00.000Z',
         establishment: { name: 'Feira do bairro' },
@@ -85,6 +91,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
 
     const classified = await request(server)
       .post(`/invoices/purchases/${purchase.id}/classification`)
+      .set('Authorization', authHeader)
       .send({
         items: [
           {
@@ -116,6 +123,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
   it('adds to an existing Material when the line names one', async () => {
     const existing = await request(server)
       .post('/materials')
+      .set('Authorization', authHeader)
       .send({
         name: `Açúcar ${Date.now()}`,
         packageCost: '10.00',
@@ -131,6 +139,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
 
     const created = await request(server)
       .post('/purchases')
+      .set('Authorization', authHeader)
       .send({
         purchaseDate: '2039-04-03T10:00:00.000Z',
         lines: [
@@ -150,6 +159,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
 
     await request(server)
       .post(`/invoices/purchases/${purchase.id}/classification`)
+      .set('Authorization', authHeader)
       .send({
         items: [
           {

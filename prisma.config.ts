@@ -15,6 +15,9 @@ export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: {
     path: 'prisma/migrations',
+    // Runs automatically after `prisma migrate dev` / `migrate reset`, and on
+    // demand via `prisma db seed`. Idempotent — see prisma/seed.ts.
+    seed: 'ts-node prisma/seed.ts',
   },
   datasource: {
     url: env('DATABASE_URL'),

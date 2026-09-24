@@ -1,7 +1,9 @@
 import { Module, ValidationPipe, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
-import { APP_FILTER, APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 
 import { EnvModule } from './config/env.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { JwtAuthGuard } from './modules/auth/presentation/guards/jwt-auth.guard';
 import { CompositeProductsModule } from './modules/composite-products/composite-products.module';
 import { HealthModule } from './modules/health/health.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
@@ -21,6 +23,7 @@ import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-wo
     LoggingModule,
     PrismaModule,
     UnitOfWorkModule,
+    AuthModule,
     MaterialsModule,
     CompositeProductsModule,
     SalesModule,
@@ -45,6 +48,13 @@ import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-wo
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
+    },
+    // Global: every route requires a bearer token unless it carries
+    // `@Public()`. `useExisting` reuses the instance `AuthModule` already
+    // builds rather than constructing a second one.
+    {
+      provide: APP_GUARD,
+      useExisting: JwtAuthGuard,
     },
   ],
 })

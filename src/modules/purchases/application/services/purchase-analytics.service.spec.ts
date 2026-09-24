@@ -5,6 +5,7 @@ import { InMemoryCompositeProductRepository } from '../../../composite-products/
 import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructure/persistence/in-memory-pending-invoice.repository';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
+import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
 import { InMemoryPurchaseAnalyticsAdapter } from '../../infrastructure/analytics/in-memory-purchase-analytics.adapter';
 import { InMemoryPurchaseRepository } from '../../infrastructure/persistence/in-memory-purchase.repository';
@@ -28,6 +29,7 @@ function buildSuite(): Suite {
     purchases: purchaseRepository,
     pendingInvoices: new InMemoryPendingInvoiceRepository(),
     users: new InMemoryUserRepository(),
+    refreshTokens: new InMemoryRefreshTokenRepository(),
   };
   const unitOfWork = new InMemoryUnitOfWork(context);
 

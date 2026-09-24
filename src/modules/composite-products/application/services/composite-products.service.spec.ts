@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Money } from '../../../../shared/domain/money/money';
 import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistence/in-memory-unit-of-work';
 import type { RepositoryContext } from '../../../../shared/domain/persistence/unit-of-work';
+import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
 import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructure/persistence/in-memory-pending-invoice.repository';
 import { Material } from '../../../materials/domain/material.entity';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
@@ -33,6 +34,7 @@ function buildService(): {
     purchases: new InMemoryPurchaseRepository(),
     pendingInvoices: new InMemoryPendingInvoiceRepository(),
     users: new InMemoryUserRepository(),
+    refreshTokens: new InMemoryRefreshTokenRepository(),
   };
 
   return {

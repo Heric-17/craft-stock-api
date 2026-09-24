@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { PrismaRefreshTokenRepository } from '../../../modules/auth/infrastructure/persistence/prisma-refresh-token.repository';
 import { PrismaCompositeProductRepository } from '../../../modules/composite-products/infrastructure/persistence/prisma-composite-product.repository';
 import { PrismaPendingInvoiceRepository } from '../../../modules/invoices/infrastructure/persistence/prisma-pending-invoice.repository';
 import { PrismaMaterialRepository } from '../../../modules/materials/infrastructure/persistence/prisma-material.repository';
@@ -26,6 +27,7 @@ export class PrismaUnitOfWork implements UnitOfWork {
       purchases: new PrismaPurchaseRepository(tx),
       pendingInvoices: new PrismaPendingInvoiceRepository(tx),
       users: new PrismaUserRepository(tx),
+      refreshTokens: new PrismaRefreshTokenRepository(tx),
     };
   }
 }

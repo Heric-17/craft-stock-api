@@ -11,6 +11,7 @@ import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructu
 import { Material } from '../../../materials/domain/material.entity';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
 import { InMemoryPurchaseRepository } from '../../../purchases/infrastructure/persistence/in-memory-purchase.repository';
+import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
 import {
   DiscontinuedMaterialReferenceError,
@@ -41,6 +42,7 @@ function buildService(): {
     purchases: new InMemoryPurchaseRepository(),
     pendingInvoices: new InMemoryPendingInvoiceRepository(),
     users: new InMemoryUserRepository(),
+    refreshTokens: new InMemoryRefreshTokenRepository(),
   };
 
   return {

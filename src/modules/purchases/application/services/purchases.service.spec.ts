@@ -8,6 +8,7 @@ import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructu
 import { Material } from '../../../materials/domain/material.entity';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
+import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
 import {
   InvalidPurchaseError,
@@ -32,6 +33,7 @@ function buildService(): {
     purchases,
     pendingInvoices: new InMemoryPendingInvoiceRepository(),
     users: new InMemoryUserRepository(),
+    refreshTokens: new InMemoryRefreshTokenRepository(),
   };
 
   return {

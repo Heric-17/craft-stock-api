@@ -14,6 +14,10 @@ function envWithLogLevel(level: LogLevel): EnvService {
     NFCE_PROVIDER: 'AUTO',
     NFCE_IMPORT_MAX_ATTEMPTS: 3,
     NFCE_IMPORT_RETRY_DELAY_MS: 1_000,
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_EXPIRES_IN_SECONDS: 900,
+    REFRESH_TOKEN_EXPIRES_IN_SECONDS: 2_592_000,
+    ARGON2_TIME_COST: 3,
   };
 
   const config = {

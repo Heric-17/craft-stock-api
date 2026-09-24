@@ -15,6 +15,29 @@ model User {
   name         String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+}
+
+// A session, not a historical record — section 9's "never Cascade" rule does
+// not apply here. A deleted User leaves nothing worth keeping a token for.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  // SHA-256 of the raw token. The raw value exists only once, in the
+  // response that issues it, same principle as a password: only ever the
+  // hash is persisted.
+  tokenHash String    @unique
+  expiresAt DateTime
+  // Set the moment the token is rotated away or logged out. Absence, not a
+  // boolean column, is what says "active" — same pattern as
+  // Material.discontinuedAt.
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // --- Materials -----------------------------------------------------------

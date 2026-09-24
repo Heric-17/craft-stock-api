@@ -12,7 +12,8 @@ Gestão de estoque fracionado, precificação e projeção de capacidade de prod
 ```bash
 cp .env.example .env      # PRIMEIRO passo: o npm install depende dele
 docker compose up -d      # sobe o PostgreSQL com volume persistente
-npm install               # instala e roda `prisma generate`
+npm install                 # instala e roda `prisma generate`
+npm run prisma:migrate      # aplica as migrations e semeia o usuário padrão
 npm run start:dev
 ```
 
@@ -21,11 +22,48 @@ npm run start:dev
 > `env("DATABASE_URL")`. Sem `.env`, a instalação falha — de forma explícita, que é
 > o comportamento que este projeto quer.
 
+`prisma migrate dev` roda o seed (`prisma/seed.ts`) automaticamente depois de aplicar as
+migrations — é o que cria o primeiro usuário. Rodar de novo não duplica nada: o seed só
+cria a conta se o e-mail ainda não existir. Para semear sem mexer nas migrations, `npm run
+prisma:seed`.
+
 A API sobe em `http://localhost:3000`. Verificação rápida:
 
 ```bash
 curl -i http://localhost:3000/health
 ```
+
+## Autenticação
+
+Toda rota é protegida por padrão — as únicas exceções são `POST /auth/login`,
+`POST /auth/refresh`, `POST /auth/logout` e `GET /health`. Não existe cadastro público:
+como não há papéis neste sistema, qualquer usuário autenticado pode criar outro
+(`POST /users`), e a primeira conta de uma instalação nova vem do seed, não da API.
+
+O seed cria, por padrão:
+
+| Campo | Valor |
+| --- | --- |
+| E-mail | `admin@craftstock.dev` |
+| Senha | `senha-forte-123` |
+
+Login:
+
+```bash
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@craftstock.dev","password":"senha-forte-123"}'
+```
+
+A resposta traz `accessToken` (curto, 15 min por padrão) e `refreshToken` (30 dias,
+rotacionado a cada uso em `POST /auth/refresh`). Rotas de negócio usam o access token:
+
+```bash
+curl http://localhost:3000/materials -H "Authorization: Bearer <accessToken>"
+```
+
+Para mudar as credenciais do seed, defina `SEED_USER_EMAIL`, `SEED_USER_PASSWORD` e/ou
+`SEED_USER_NAME` no ambiente antes de rodar `prisma:migrate` ou `prisma:seed`.
 
 ## Scripts
 
@@ -41,7 +79,8 @@ curl -i http://localhost:3000/health
 | `npm run test:e2e` | Testes e2e (exige o banco no ar) |
 | `npm run prisma:validate` | Valida `prisma/schema.prisma` |
 | `npm run prisma:generate` | Regera o Prisma Client |
-| `npm run prisma:migrate` | Cria/aplica migration de desenvolvimento |
+| `npm run prisma:migrate` | Cria/aplica migration de desenvolvimento (e roda o seed) |
+| `npm run prisma:seed` | Roda só o seed, sem mexer em migrations |
 
 ## Ambiente
 
@@ -59,8 +98,9 @@ inicialização.
 ## Estrutura
 
 ```
-prisma.config.ts                configuração do CLI do Prisma (inclui DATABASE_URL)
-prisma/schema.prisma            datasource e generator — sem modelos ainda
+prisma.config.ts                configuração do CLI do Prisma (inclui DATABASE_URL e o seed)
+prisma/schema.prisma            datasource, generator e os models
+prisma/seed.ts                  cria o usuário padrão; roda após `migrate dev`/`reset`
 src/
   config/                       schema de ambiente e acesso tipado
   modules/                      módulos de negócio (ver src/modules/README.md)

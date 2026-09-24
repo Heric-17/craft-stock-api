@@ -2,6 +2,7 @@ import { InMemoryCompositeProductRepository } from '../../../composite-products/
 import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructure/persistence/in-memory-pending-invoice.repository';
 import { InMemoryPurchaseRepository } from '../../../purchases/infrastructure/persistence/in-memory-purchase.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
+import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
 import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistence/in-memory-unit-of-work';
 import type { RepositoryContext } from '../../../../shared/domain/persistence/unit-of-work';
@@ -25,6 +26,7 @@ function buildService(): { service: MaterialsService; materials: InMemoryMateria
     purchases: new InMemoryPurchaseRepository(),
     pendingInvoices: new InMemoryPendingInvoiceRepository(),
     users: new InMemoryUserRepository(),
+    refreshTokens: new InMemoryRefreshTokenRepository(),
   };
 
   return { service: new MaterialsService(materials, new InMemoryUnitOfWork(context)), materials };

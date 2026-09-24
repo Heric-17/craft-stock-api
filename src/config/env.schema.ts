@@ -34,6 +34,26 @@ export const envSchema = z.object({
   NFCE_IMPORT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   // Base of the progressive wait between attempts, doubled each time.
   NFCE_IMPORT_RETRY_DELAY_MS: z.coerce.number().int().min(0).max(60_000).default(1_000),
+  // HMAC signing key for session JWTs. Required with no default: a hardcoded
+  // fallback would mean every installation that forgets to set it shares the
+  // same key.
+  JWT_SECRET: z.string().min(32, 'must be at least 32 characters long'),
+  // Short on purpose: the access token is silently traded for a new one
+  // through /auth/refresh, so its exposure window stays small regardless of
+  // how long the session actually lasts.
+  JWT_EXPIRES_IN_SECONDS: z.coerce.number().int().positive().default(900),
+  // The refresh token is what actually keeps someone logged in across
+  // requests. 30 days by default — persisted, rotated on every use, and
+  // revocable, unlike the access token above.
+  REFRESH_TOKEN_EXPIRES_IN_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30 * 24 * 60 * 60),
+  // argon2's time cost (iteration count). memoryCost and parallelism stay at
+  // the library's own defaults; this is the one knob "custo configurável por
+  // ambiente" asks for.
+  ARGON2_TIME_COST: z.coerce.number().int().min(1).max(10).default(3),
 });
 
 export type Env = z.infer<typeof envSchema>;

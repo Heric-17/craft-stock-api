@@ -8,11 +8,19 @@ import {
 import type { Request, Response } from 'express';
 
 import {
+  InvalidCredentialsError,
+  InvalidRefreshTokenError,
+} from '../../../modules/auth/domain/auth.error';
+import {
   DuplicateInvoiceError,
   InvoiceSourceUnavailableError,
   InvoiceStructureChangedError,
 } from '../../../modules/invoices/domain/invoice.error';
 import { PurchaseNotFoundError } from '../../../modules/purchases/domain/purchase.error';
+import {
+  EmailAlreadyInUseError,
+  UserNotFoundError,
+} from '../../../modules/users/domain/user.error';
 import { DomainError } from '../../domain/errors/domain.error';
 import { RequestContextService } from '../../infrastructure/logging/request-context.service';
 import { StructuredLogger } from '../../infrastructure/logging/structured-logger.service';
@@ -54,6 +62,15 @@ const DOMAIN_ERROR_STATUS: readonly {
   // The portal answered with something we could not read. A failure of ours,
   // upstream: reported as a bad gateway and logged loudly below.
   { error: InvoiceStructureChangedError, status: HttpStatus.BAD_GATEWAY },
+  // Wrong email or wrong password — the request is understood, the caller
+  // just is not who they claim to be.
+  { error: InvalidCredentialsError, status: HttpStatus.UNAUTHORIZED },
+  // The refresh token is unknown, expired, or already spent by rotation.
+  { error: InvalidRefreshTokenError, status: HttpStatus.UNAUTHORIZED },
+  // Registration named an email that is already taken.
+  { error: EmailAlreadyInUseError, status: HttpStatus.CONFLICT },
+  // A token pointed at a User id that no longer exists.
+  { error: UserNotFoundError, status: HttpStatus.NOT_FOUND },
 ];
 
 interface DescribedError {
