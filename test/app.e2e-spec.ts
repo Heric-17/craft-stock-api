@@ -5,7 +5,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
-import { CORRELATION_ID_HEADER } from '../src/shared/presentation/middleware/correlation-id.middleware';
+import { CORRELATION_ID_HEADER } from '../src/shared/presentation/middleware/request-context.middleware';
 
 interface HealthBody {
   status: string;

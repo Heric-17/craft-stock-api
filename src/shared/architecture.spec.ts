@@ -124,6 +124,23 @@ describe('there is no PurchaseItemRepository', () => {
   });
 });
 
+describe('there is no AuditLogRepository', () => {
+  /**
+   * §15.2: application code never writes an AuditLog row directly — only the
+   * Prisma extension does, from inside infrastructure/. A repository for it
+   * would make that bypassable (load a row, mutate it, save it back),
+   * defeating the whole point of capture being automatic and generic. Reads
+   * go through `AuditTrailReader`, a query port, deliberately not named
+   * "Repository".
+   */
+  it('no file declares one', () => {
+    const declaration = /(?:interface|class|const)\s+(?:\w*AuditLogRepository|AUDIT_LOG_REPOSITORY)\b/;
+    const offenders = sourceFiles().filter((file) => declaration.test(read(file)));
+
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('no production code writes to test/fixtures/', () => {
   /**
    * A fixture updated automatically would make the tests validate the new

@@ -18,6 +18,8 @@ function envWithLogLevel(level: LogLevel): EnvService {
     JWT_EXPIRES_IN_SECONDS: 900,
     REFRESH_TOKEN_EXPIRES_IN_SECONDS: 2_592_000,
     ARGON2_TIME_COST: 3,
+    AUDIT_LOG_RETENTION_DAYS: 180,
+    REQUEST_LOG_RETENTION_DAYS: 30,
   };
 
   const config = {
@@ -76,7 +78,7 @@ describe('StructuredLogger', () => {
   it('carries the correlation id of the surrounding request', () => {
     const logger = new StructuredLogger(envWithLogLevel('info'), requestContext);
 
-    requestContext.run({ correlationId: 'abc-123' }, () => {
+    requestContext.run({ correlationId: 'abc-123', transactionId: 'txn-abc-123' }, () => {
       logger.log('inside a request');
     });
 

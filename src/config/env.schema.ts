@@ -54,6 +54,12 @@ export const envSchema = z.object({
   // the library's own defaults; this is the one knob "custo configurável por
   // ambiente" asks for.
   ARGON2_TIME_COST: z.coerce.number().int().min(1).max(10).default(3),
+  // §15.2: how long AuditLog and RequestLog rows are kept before the daily
+  // retention job prunes them. Separate knobs because RequestLog is more
+  // operational noise (one row per mutating request) than AuditLog, which is
+  // the actual investigation trail.
+  AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().min(1).default(180),
+  REQUEST_LOG_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
 });
 
 export type Env = z.infer<typeof envSchema>;

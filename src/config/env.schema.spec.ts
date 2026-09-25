@@ -19,6 +19,8 @@ describe('validateEnv', () => {
       JWT_EXPIRES_IN_SECONDS: 900,
       REFRESH_TOKEN_EXPIRES_IN_SECONDS: 2_592_000,
       ARGON2_TIME_COST: 3,
+      AUDIT_LOG_RETENTION_DAYS: 180,
+      REQUEST_LOG_RETENTION_DAYS: 30,
     });
   });
 

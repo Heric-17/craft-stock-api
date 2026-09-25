@@ -1,4 +1,5 @@
 import type { RepositoryContext } from '../../../../shared/domain/persistence/unit-of-work';
+import { RequestContextService } from '../../../../shared/infrastructure/logging/request-context.service';
 import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistence/in-memory-unit-of-work';
 import { InMemoryCompositeProductRepository } from '../../../composite-products/infrastructure/persistence/in-memory-composite-product.repository';
 import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructure/persistence/in-memory-pending-invoice.repository';
@@ -49,7 +50,7 @@ function buildSuite(): Suite {
 
   return {
     purchases: new PurchasesService(unitOfWork, repository),
-    editing: new PurchaseEditingService(unitOfWork),
+    editing: new PurchaseEditingService(unitOfWork, new RequestContextService()),
     repository,
   };
 }

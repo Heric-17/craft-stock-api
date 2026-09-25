@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { PrismaService } from '../../../../shared/infrastructure/prisma/prisma.service';
+import { PRISMA_CLIENT } from '../../../../shared/infrastructure/prisma/prisma-client.token';
 import type { Prisma } from '../../../../shared/infrastructure/prisma/generated/client';
 import type { BillOfMaterials } from '../../domain/bill-of-materials.entity';
 import type { CompositeProduct } from '../../domain/composite-product.entity';
@@ -11,7 +11,7 @@ import { CompositeProductMapper } from './mappers/composite-product.mapper';
 
 @Injectable()
 export class PrismaCompositeProductRepository implements CompositeProductRepository {
-  constructor(@Inject(PrismaService) private readonly prisma: Prisma.TransactionClient) {}
+  constructor(@Inject(PRISMA_CLIENT) private readonly prisma: Prisma.TransactionClient) {}
 
   async findById(id: string): Promise<CompositeProduct | null> {
     const row = await this.prisma.compositeProduct.findUnique({ where: { id } });

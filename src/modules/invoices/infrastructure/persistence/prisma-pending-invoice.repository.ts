@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { PrismaService } from '../../../../shared/infrastructure/prisma/prisma.service';
+import { PRISMA_CLIENT } from '../../../../shared/infrastructure/prisma/prisma-client.token';
 import type { Prisma } from '../../../../shared/infrastructure/prisma/generated/client';
 import type { PendingInvoice } from '../../domain/pending-invoice.entity';
 import type { PendingInvoiceStatus } from '../../domain/pending-invoice-status.enum';
@@ -9,7 +9,7 @@ import { PendingInvoiceMapper } from './mappers/pending-invoice.mapper';
 
 @Injectable()
 export class PrismaPendingInvoiceRepository implements PendingInvoiceRepository {
-  constructor(@Inject(PrismaService) private readonly prisma: Prisma.TransactionClient) {}
+  constructor(@Inject(PRISMA_CLIENT) private readonly prisma: Prisma.TransactionClient) {}
 
   async findById(id: string): Promise<PendingInvoice | null> {
     const row = await this.prisma.pendingInvoice.findUnique({ where: { id } });

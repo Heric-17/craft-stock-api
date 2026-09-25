@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { PrismaService } from '../../../../shared/infrastructure/prisma/prisma.service';
+import { PRISMA_CLIENT } from '../../../../shared/infrastructure/prisma/prisma-client.token';
 import type { Prisma } from '../../../../shared/infrastructure/prisma/generated/client';
 import type { Material } from '../../domain/material.entity';
 import type { MaterialPriceHistory } from '../../domain/material-price-history.entity';
@@ -9,16 +9,16 @@ import { MaterialMapper } from './mappers/material.mapper';
 import { MaterialPriceHistoryMapper } from './mappers/material-price-history.mapper';
 
 /**
- * Accepts `Prisma.TransactionClient` rather than the concrete `PrismaService`
- * class so the very same repository code can run against the default
- * connection or against the transactional client `PrismaUnitOfWork` hands it.
- * `@Inject(PrismaService)` still tells Nest which provider to resolve for the
- * non-transactional case; `PrismaService` structurally satisfies
- * `Prisma.TransactionClient`.
+ * Accepts `Prisma.TransactionClient` rather than a concrete client class so
+ * the very same repository code can run against the default connection or
+ * against the transactional client `PrismaUnitOfWork` hands it.
+ * `@Inject(PRISMA_CLIENT)` tells Nest which provider to resolve for the
+ * non-transactional case — the audit-extended client (§15.2), never the bare
+ * `PrismaService` — which structurally satisfies `Prisma.TransactionClient`.
  */
 @Injectable()
 export class PrismaMaterialRepository implements MaterialRepository {
-  constructor(@Inject(PrismaService) private readonly prisma: Prisma.TransactionClient) {}
+  constructor(@Inject(PRISMA_CLIENT) private readonly prisma: Prisma.TransactionClient) {}
 
   async findById(id: string): Promise<Material | null> {
     const row = await this.prisma.material.findUnique({ where: { id } });

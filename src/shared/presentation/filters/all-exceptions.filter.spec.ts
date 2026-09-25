@@ -99,11 +99,28 @@ describe('AllExceptionsFilter', () => {
   });
 
   it('includes the correlation id of the current request', () => {
-    requestContext.run({ correlationId: 'filter-id' }, () => {
+    requestContext.run({ correlationId: 'filter-id', transactionId: 'filter-txn' }, () => {
       filter.catch(new NotFoundException(), host);
     });
 
     expect(captured.body.correlationId).toBe('filter-id');
+  });
+
+  it('omits errorId below the server-error floor', () => {
+    requestContext.run({ correlationId: 'filter-id', transactionId: 'filter-txn' }, () => {
+      filter.catch(new NotFoundException(), host);
+    });
+
+    expect(captured.body.errorId).toBeUndefined();
+  });
+
+  it('sets errorId equal to the correlation id at and above 500', () => {
+    requestContext.run({ correlationId: 'filter-id', transactionId: 'filter-txn' }, () => {
+      filter.catch(new Error('boom'), host);
+    });
+
+    expect(captured.status).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+    expect(captured.body.errorId).toBe('filter-id');
   });
 
   /**

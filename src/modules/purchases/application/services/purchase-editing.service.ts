@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { Money } from '../../../../shared/domain/money/money';
+import { RequestContextService } from '../../../../shared/infrastructure/logging/request-context.service';
 import {
   UNIT_OF_WORK,
   type RepositoryContext,
@@ -40,9 +41,19 @@ import { PurchaseViewMapper } from '../mappers/purchase-view.mapper';
  */
 @Injectable()
 export class PurchaseEditingService {
-  constructor(@Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork) {}
+  constructor(
+    @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
+    private readonly requestContext: RequestContextService,
+  ) {}
 
   async addItem(purchaseId: string, input: AddPurchaseItemInput): Promise<PurchaseDetailView> {
+    // Reattribution runs as a side effect of every item edit (see the class
+    // doc comment), so a resulting PurchaseItem.allocatedDiscount change
+    // reads, from the diff alone, exactly like a deliberate discount-mode
+    // change would. `intent` is the one thing that tells them apart in the
+    // audit trail (§15.2).
+    this.requestContext.setIntent('purchase_item_edit');
+
     return this.edit(purchaseId, (purchase) =>
       purchase.addItem({
         id: randomUUID(),
@@ -60,6 +71,8 @@ export class PurchaseEditingService {
   }
 
   async removeItem(purchaseId: string, itemId: string): Promise<PurchaseDetailView> {
+    this.requestContext.setIntent('purchase_item_edit');
+
     return this.edit(purchaseId, (purchase) => purchase.removeItem(itemId));
   }
 
@@ -68,6 +81,8 @@ export class PurchaseEditingService {
     itemId: string,
     input: ChangePurchaseItemInput,
   ): Promise<PurchaseDetailView> {
+    this.requestContext.setIntent('purchase_item_edit');
+
     const change: ItemValueChange = {
       ...(input.quantity !== undefined ? { quantity: input.quantity } : {}),
       ...(input.unitPrice !== undefined
@@ -91,6 +106,8 @@ export class PurchaseEditingService {
     input: SetDiscountAllocationInput,
   ): Promise<PurchaseDetailView> {
     const manual = toManualAllocation(input);
+
+    this.requestContext.setIntent('discount_allocation_change');
 
     return this.edit(purchaseId, (purchase) =>
       manual === undefined

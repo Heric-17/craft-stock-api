@@ -33,6 +33,13 @@ export interface ErrorResponseBody {
   path: string;
   timestamp: string;
   correlationId?: string;
+  /**
+   * Present only at or above `SERVER_ERROR_FLOOR` and always equal to
+   * `correlationId` (§15.1) — this is what a user hands back for someone to
+   * search the `RequestLog`/`AuditLog` trail by (§15.2's investigation
+   * endpoint accepts it directly).
+   */
+  errorId?: string;
 }
 
 /** Anything at or above this status is a failure of ours, not of the caller. */
@@ -107,6 +114,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       ...(this.requestContext.correlationId !== undefined
         ? { correlationId: this.requestContext.correlationId }
+        : {}),
+      ...(described.status >= SERVER_ERROR_FLOOR && this.requestContext.correlationId !== undefined
+        ? { errorId: this.requestContext.correlationId }
         : {}),
     };
 

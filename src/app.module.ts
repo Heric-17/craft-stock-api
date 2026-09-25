@@ -1,6 +1,8 @@
 import { Module, ValidationPipe, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 
+import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { EnvModule } from './config/env.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/presentation/guards/jwt-auth.guard';
@@ -12,7 +14,7 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { UsersModule } from './modules/users/users.module';
 import { AllExceptionsFilter } from './shared/presentation/filters/all-exceptions.filter';
-import { CorrelationIdMiddleware } from './shared/presentation/middleware/correlation-id.middleware';
+import { RequestContextMiddleware } from './shared/presentation/middleware/request-context.middleware';
 import { LoggingModule } from './shared/infrastructure/logging/logging.module';
 import { PrismaModule } from './shared/infrastructure/prisma/prisma.module';
 import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-work.module';
@@ -20,6 +22,7 @@ import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-wo
 @Module({
   imports: [
     EnvModule,
+    ScheduleModule.forRoot(),
     LoggingModule,
     PrismaModule,
     UnitOfWorkModule,
@@ -30,10 +33,11 @@ import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-wo
     PurchasesModule,
     InvoicesModule,
     UsersModule,
+    AuditLogModule,
     HealthModule,
   ],
   providers: [
-    CorrelationIdMiddleware,
+    RequestContextMiddleware,
     {
       // Unknown properties are rejected instead of silently dropped, and the
       // payload arrives at the controller already as the DTO class.
@@ -60,6 +64,6 @@ import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-wo
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
   }
 }

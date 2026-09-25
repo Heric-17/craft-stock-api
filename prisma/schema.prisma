@@ -301,6 +301,66 @@ enum PendingInvoiceStatus {
   IMPORTED
 }
 
+// --- Audit trail & request log --------------------------------------------
+// Captured automatically by a Prisma client extension in infrastructure/,
+// never written to by application code. See §15.2 of CLAUDE.md.
+
+enum AuditOperation {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+model AuditLog {
+  id            String         @id @default(uuid())
+  occurredAt    DateTime       @default(now())
+  // Groups every AuditLog row written during the same request with the
+  // RequestLog row for that request — not a Postgres transaction id, just
+  // the correlation key both specs call transactionId.
+  transactionId String
+  userId        String?
+  route         String
+  httpMethod    String
+  correlationId String
+  entityType    String
+  entityId      String
+  entityLabel   String?
+  operation     AuditOperation
+  // { field: { old, new } } for only the fields that actually changed.
+  // Sensitive fields (password/hash/token/cpf) are omitted entirely.
+  changes       Json
+  // Optional, set by the handful of services where the diff alone doesn't
+  // distinguish intent. Never required for a row to be written.
+  intent        String?
+
+  @@index([entityType, entityId])
+  @@index([userId, occurredAt])
+  @@index([transactionId])
+}
+
+// One row per mutating request, written whether or not it produced any
+// AuditLog rows — a route that touched nothing is itself an investigation
+// fact. Written outside the business transaction, like ErrorLog: a rollback
+// must not erase the record that the attempt happened.
+model RequestLog {
+  id            String   @id @default(uuid())
+  transactionId String   @unique
+  occurredAt    DateTime @default(now())
+  route         String
+  httpMethod    String
+  userId        String?
+  correlationId String
+  statusCode    Int
+  durationMs    Int
+  // Set only when statusCode >= 500, and always equal to correlationId
+  // (§15.1). A separate column because it's what a user-facing error
+  // actually hands back for someone to search by.
+  errorId       String?
+
+  @@index([correlationId])
+  @@index([errorId])
+}
+
 model PendingInvoice {
   id            String               @id @default(uuid())
   url           String

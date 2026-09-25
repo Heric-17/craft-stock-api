@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { PrismaService } from '../../../../shared/infrastructure/prisma/prisma.service';
+import { PRISMA_CLIENT } from '../../../../shared/infrastructure/prisma/prisma-client.token';
 import type { Prisma } from '../../../../shared/infrastructure/prisma/generated/client';
 import type { Sale } from '../../domain/sale.entity';
 import type { SaleItem } from '../../domain/sale-item.entity';
@@ -12,7 +12,7 @@ import { StockMovementSnapshotMapper } from './mappers/stock-movement-snapshot.m
 
 @Injectable()
 export class PrismaSaleRepository implements SaleRepository {
-  constructor(@Inject(PrismaService) private readonly prisma: Prisma.TransactionClient) {}
+  constructor(@Inject(PRISMA_CLIENT) private readonly prisma: Prisma.TransactionClient) {}
 
   async findById(id: string): Promise<Sale | null> {
     const row = await this.prisma.sale.findUnique({ where: { id } });
