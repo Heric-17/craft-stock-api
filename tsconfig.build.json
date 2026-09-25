@@ -15,6 +15,7 @@
     "coverage",
     "test",
     "prisma.config.ts",
+    "prisma/seed.ts",
     "**/*.spec.ts",
     "**/*.e2e-spec.ts"
   ]
