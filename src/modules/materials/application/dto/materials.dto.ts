@@ -39,10 +39,14 @@ export interface MaterialPriceHistoryView {
   changedAt: Date;
 }
 
+/**
+ * `imageUrl` is absent on purpose: it is never free text. It is only ever a
+ * key a `StorageProvider` generated, set through `MaterialsService.setImage`
+ * — the dedicated upload endpoint — never through create or update.
+ */
 export interface CreateMaterialInput {
   name: string;
   description: string | null;
-  imageUrl: string | null;
   packageCost: string;
   packageQuantity: number;
   consumptionUnit: ConsumptionUnit;
@@ -50,11 +54,10 @@ export interface CreateMaterialInput {
   minimumStockAlert: number;
 }
 
-/** `consumptionUnit` is absent on purpose: it moves only through `changeConsumptionUnit`. */
+/** `consumptionUnit` and `imageUrl` are absent on purpose: see `CreateMaterialInput` and `changeConsumptionUnit`. */
 export interface UpdateMaterialInput {
   name?: string;
   description?: string | null;
-  imageUrl?: string | null;
   packageCost?: string;
   packageQuantity?: number;
   minimumStockAlert?: number;

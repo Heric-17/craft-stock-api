@@ -5,6 +5,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
 import { Money } from '../../../../shared/domain/money/money';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
+import {
+  STORAGE_PROVIDER_FACTORY,
+  type StorageProviderFactory,
+  type UploadableFile,
+} from '../../../../shared/domain/storage/storage-provider';
 import type { ConsumptionUnit } from '../../domain/consumption-unit';
 import { Material } from '../../domain/material.entity';
 import { MaterialPriceHistory } from '../../domain/material-price-history.entity';
@@ -28,6 +33,8 @@ export class MaterialsService {
   constructor(
     @Inject(MATERIAL_REPOSITORY) private readonly materials: MaterialRepository,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
+    @Inject(STORAGE_PROVIDER_FACTORY)
+    private readonly storageProviderFactory: StorageProviderFactory,
   ) {}
 
   async create(input: CreateMaterialInput): Promise<MaterialView> {
@@ -38,7 +45,7 @@ export class MaterialsService {
       id: randomUUID(),
       name: input.name,
       description: input.description,
-      imageUrl: input.imageUrl,
+      imageUrl: null,
       packageCost,
       packageQuantity: input.packageQuantity,
       consumptionUnit: input.consumptionUnit,
@@ -73,7 +80,6 @@ export class MaterialsService {
     const changes: Partial<{
       name: string;
       description: string | null;
-      imageUrl: string | null;
       packageCost: Money;
       packageQuantity: number;
       minimumStockAlert: number;
@@ -81,7 +87,6 @@ export class MaterialsService {
 
     if (input.name !== undefined) changes.name = input.name;
     if (input.description !== undefined) changes.description = input.description;
-    if (input.imageUrl !== undefined) changes.imageUrl = input.imageUrl;
     if (input.packageQuantity !== undefined) changes.packageQuantity = input.packageQuantity;
     if (input.minimumStockAlert !== undefined) changes.minimumStockAlert = input.minimumStockAlert;
 
@@ -187,6 +192,47 @@ export class MaterialsService {
         );
       }
     });
+
+    return MaterialViewMapper.toView(updated);
+  }
+
+  /**
+   * Uploads via the currently selected `StorageProvider` before touching the
+   * database, and deletes the previous image only after the new key is
+   * saved — so a failure at either step never leaves `imageUrl` pointing at
+   * nothing, and at worst leaves an orphaned object in storage rather than a
+   * dangling reference.
+   */
+  async setImage(materialId: string, file: UploadableFile): Promise<MaterialView> {
+    const now = new Date();
+    const current = await this.findByIdOrThrow(materialId);
+    const provider = this.storageProviderFactory.create();
+    const newKey = await provider.upload(file);
+    const updated = current.update({ imageUrl: newKey }, now);
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.materials.save(updated);
+    });
+
+    if (current.imageUrl !== null) {
+      await provider.delete(current.imageUrl);
+    }
+
+    return MaterialViewMapper.toView(updated);
+  }
+
+  async removeImage(materialId: string): Promise<MaterialView> {
+    const now = new Date();
+    const current = await this.findByIdOrThrow(materialId);
+    const updated = current.update({ imageUrl: null }, now);
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.materials.save(updated);
+    });
+
+    if (current.imageUrl !== null) {
+      await this.storageProviderFactory.create().delete(current.imageUrl);
+    }
 
     return MaterialViewMapper.toView(updated);
   }

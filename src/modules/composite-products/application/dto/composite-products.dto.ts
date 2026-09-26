@@ -5,10 +5,15 @@ export interface BomItemInput {
   quantity: number;
 }
 
+/**
+ * `imageUrl` is absent on purpose: it is never free text. It is only ever a
+ * key a `StorageProvider` generated, set through
+ * `CompositeProductsService.setImage` — the dedicated upload endpoint —
+ * never through create or update.
+ */
 export interface CreateCompositeProductInput {
   name: string;
   description: string | null;
-  imageUrl: string | null;
   fixedOperationalCost: string;
   /** Percentage, e.g. `35` for 35%. */
   profitMargin: number;
@@ -18,13 +23,13 @@ export interface CreateCompositeProductInput {
 
 /**
  * Every field optional: only the ones present are changed. `manualPrice`
- * follows the description/imageUrl convention — omitted leaves it untouched,
- * `null` clears it back to the suggested price.
+ * follows the description convention — omitted leaves it untouched, `null`
+ * clears it back to the suggested price. `imageUrl` is absent for the same
+ * reason as `CreateCompositeProductInput`.
  */
 export interface UpdateCompositeProductInput {
   name?: string;
   description?: string | null;
-  imageUrl?: string | null;
   fixedOperationalCost?: string;
   profitMargin?: number;
   manualPrice?: string | null;

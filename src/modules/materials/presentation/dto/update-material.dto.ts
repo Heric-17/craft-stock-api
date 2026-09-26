@@ -23,10 +23,6 @@ export class UpdateMaterialDto {
 
   @IsOptional()
   @IsString()
-  imageUrl?: string | null;
-
-  @IsOptional()
-  @IsString()
   @Matches(MONEY_DECIMAL_PATTERN, { message: 'packageCost must be a decimal amount, e.g. "12.90"' })
   packageCost?: string;
 

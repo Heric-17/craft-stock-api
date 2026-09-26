@@ -16,9 +16,10 @@ import { MONEY_DECIMAL_PATTERN } from './money-decimal.validator';
 
 /**
  * Every field optional: only the ones present are changed. `manualPrice`
- * follows the description/imageUrl convention — omitted leaves it untouched,
- * `null` clears it back to the suggested price. `billOfMaterials`, when
- * present, fully replaces the recipe.
+ * follows the description convention — omitted leaves it untouched, `null`
+ * clears it back to the suggested price. `billOfMaterials`, when present,
+ * fully replaces the recipe. `imageUrl` has no field here: it only moves
+ * through the dedicated upload/delete image endpoints.
  */
 export class UpdateCompositeProductDto {
   @IsOptional()
@@ -29,10 +30,6 @@ export class UpdateCompositeProductDto {
   @IsOptional()
   @IsString()
   description?: string | null;
-
-  @IsOptional()
-  @IsString()
-  imageUrl?: string | null;
 
   @IsOptional()
   @IsString()

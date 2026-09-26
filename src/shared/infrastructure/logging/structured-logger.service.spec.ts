@@ -20,6 +20,10 @@ function envWithLogLevel(level: LogLevel): EnvService {
     ARGON2_TIME_COST: 3,
     AUDIT_LOG_RETENTION_DAYS: 180,
     REQUEST_LOG_RETENTION_DAYS: 30,
+    STORAGE_PROVIDER: 'LOCAL_DISK',
+    UPLOADS_DIR: './uploads',
+    S3_REGION: 'us-east-1',
+    MAX_IMAGE_UPLOAD_SIZE_BYTES: 5 * 1024 * 1024,
   };
 
   const config = {

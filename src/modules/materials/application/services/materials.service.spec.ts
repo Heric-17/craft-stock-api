@@ -6,6 +6,10 @@ import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/per
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
 import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistence/in-memory-unit-of-work';
 import type { RepositoryContext } from '../../../../shared/domain/persistence/unit-of-work';
+import {
+  InMemoryStorageProvider,
+  InMemoryStorageProviderFactory,
+} from '../../../../shared/infrastructure/storage/in-memory-storage-provider';
 import { InMemoryMaterialRepository } from '../../infrastructure/persistence/in-memory-material.repository';
 import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
 import {
@@ -17,7 +21,11 @@ import {
 import type { CreateMaterialInput } from '../dto/materials.dto';
 import { MaterialsService } from './materials.service';
 
-function buildService(): { service: MaterialsService; materials: InMemoryMaterialRepository } {
+function buildService(): {
+  service: MaterialsService;
+  materials: InMemoryMaterialRepository;
+  storage: InMemoryStorageProvider;
+} {
   const materials = new InMemoryMaterialRepository();
   const context: RepositoryContext = {
     materials,
@@ -28,15 +36,23 @@ function buildService(): { service: MaterialsService; materials: InMemoryMateria
     users: new InMemoryUserRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
   };
+  const storage = new InMemoryStorageProvider();
 
-  return { service: new MaterialsService(materials, new InMemoryUnitOfWork(context)), materials };
+  return {
+    service: new MaterialsService(
+      materials,
+      new InMemoryUnitOfWork(context),
+      new InMemoryStorageProviderFactory(storage),
+    ),
+    materials,
+    storage,
+  };
 }
 
 function buildCreateInput(overrides: Partial<CreateMaterialInput> = {}): CreateMaterialInput {
   return {
     name: 'Farinha de trigo',
     description: null,
-    imageUrl: null,
     packageCost: '10.00',
     packageQuantity: 1000,
     consumptionUnit: 'GRAM',
@@ -418,6 +434,75 @@ describe('MaterialsService', () => {
       await expect(service.changeConsumptionUnit('missing', 'GRAM')).rejects.toThrow(
         MaterialNotFoundError,
       );
+    });
+  });
+
+  describe('setImage', () => {
+    it('uploads through the StorageProvider and persists the returned key, never a URL', async () => {
+      const { service, storage } = buildService();
+      const created = await service.create(buildCreateInput());
+
+      const updated = await service.setImage(created.id, {
+        buffer: Buffer.from('fake-image-bytes'),
+        mimeType: 'image/png',
+      });
+
+      expect(updated.imageUrl).not.toBeNull();
+      expect(updated.imageUrl).not.toMatch(/^https?:\/\//);
+      expect(storage.has(updated.imageUrl as string)).toBe(true);
+    });
+
+    it('deletes the previous image once the new one is saved', async () => {
+      const { service, storage } = buildService();
+      const created = await service.create(buildCreateInput());
+
+      const first = await service.setImage(created.id, {
+        buffer: Buffer.from('first'),
+        mimeType: 'image/jpeg',
+      });
+      const firstKey = first.imageUrl as string;
+
+      const second = await service.setImage(created.id, {
+        buffer: Buffer.from('second'),
+        mimeType: 'image/jpeg',
+      });
+
+      expect(storage.has(firstKey)).toBe(false);
+      expect(storage.has(second.imageUrl as string)).toBe(true);
+    });
+
+    it('throws MaterialNotFoundError for an unknown material', async () => {
+      const { service } = buildService();
+
+      await expect(
+        service.setImage('missing', { buffer: Buffer.from('x'), mimeType: 'image/png' }),
+      ).rejects.toThrow(MaterialNotFoundError);
+    });
+  });
+
+  describe('removeImage', () => {
+    it('deletes the stored image and clears imageUrl', async () => {
+      const { service, storage } = buildService();
+      const created = await service.create(buildCreateInput());
+      const withImage = await service.setImage(created.id, {
+        buffer: Buffer.from('bytes'),
+        mimeType: 'image/webp',
+      });
+      const key = withImage.imageUrl as string;
+
+      const cleared = await service.removeImage(created.id);
+
+      expect(cleared.imageUrl).toBeNull();
+      expect(storage.has(key)).toBe(false);
+    });
+
+    it('is a no-op on storage when the material has no image', async () => {
+      const { service } = buildService();
+      const created = await service.create(buildCreateInput());
+
+      const cleared = await service.removeImage(created.id);
+
+      expect(cleared.imageUrl).toBeNull();
     });
   });
 });

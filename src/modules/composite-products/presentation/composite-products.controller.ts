@@ -9,8 +9,13 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 
+import { EnvService } from '../../../config/env.service';
+import { validateImageFile } from '../../../shared/presentation/http/validate-image-file';
 import type {
   CompositeProductView,
   UpdateCompositeProductInput,
@@ -22,7 +27,10 @@ import { UpdateCompositeProductDto } from './dto/update-composite-product.dto';
 
 @Controller('composite-products')
 export class CompositeProductsController {
-  constructor(private readonly compositeProductsService: CompositeProductsService) {}
+  constructor(
+    private readonly compositeProductsService: CompositeProductsService,
+    private readonly env: EnvService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -30,7 +38,6 @@ export class CompositeProductsController {
     return this.compositeProductsService.create({
       name: dto.name,
       description: dto.description ?? null,
-      imageUrl: dto.imageUrl ?? null,
       fixedOperationalCost: dto.fixedOperationalCost,
       profitMargin: dto.profitMargin,
       manualPrice: dto.manualPrice ?? null,
@@ -60,7 +67,6 @@ export class CompositeProductsController {
 
     if (dto.name !== undefined) input.name = dto.name;
     if (dto.description !== undefined) input.description = dto.description;
-    if (dto.imageUrl !== undefined) input.imageUrl = dto.imageUrl;
     if (dto.fixedOperationalCost !== undefined)
       input.fixedOperationalCost = dto.fixedOperationalCost;
     if (dto.profitMargin !== undefined) input.profitMargin = dto.profitMargin;
@@ -91,5 +97,32 @@ export class CompositeProductsController {
   @HttpCode(HttpStatus.OK)
   reactivate(@Param('id') id: string): Promise<CompositeProductView> {
     return this.compositeProductsService.reactivate(id);
+  }
+
+  /**
+   * Multipart upload, field name `file`. Validated for MIME type and size
+   * before it ever reaches `StorageProvider`; stores the relative key
+   * `StorageProviderFactory`'s chosen provider returns, never a
+   * host-qualified URL.
+   */
+  @Post(':id/image')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file'))
+  uploadImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<CompositeProductView> {
+    const validated = validateImageFile(file, this.env);
+
+    return this.compositeProductsService.setImage(id, {
+      buffer: validated.buffer,
+      mimeType: validated.mimetype,
+    });
+  }
+
+  @Delete(':id/image')
+  @HttpCode(HttpStatus.OK)
+  removeImage(@Param('id') id: string): Promise<CompositeProductView> {
+    return this.compositeProductsService.removeImage(id);
   }
 }

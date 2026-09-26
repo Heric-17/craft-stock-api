@@ -10,8 +10,13 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 
+import { EnvService } from '../../../config/env.service';
+import { validateImageFile } from '../../../shared/presentation/http/validate-image-file';
 import type {
   MaterialPriceHistoryView,
   MaterialView,
@@ -27,7 +32,10 @@ import { UpdateMaterialDto } from './dto/update-material.dto';
 
 @Controller('materials')
 export class MaterialsController {
-  constructor(private readonly materialsService: MaterialsService) {}
+  constructor(
+    private readonly materialsService: MaterialsService,
+    private readonly env: EnvService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -35,7 +43,6 @@ export class MaterialsController {
     return this.materialsService.create({
       name: dto.name,
       description: dto.description ?? null,
-      imageUrl: dto.imageUrl ?? null,
       packageCost: dto.packageCost,
       packageQuantity: dto.packageQuantity,
       consumptionUnit: dto.consumptionUnit,
@@ -61,7 +68,6 @@ export class MaterialsController {
 
     if (dto.name !== undefined) input.name = dto.name;
     if (dto.description !== undefined) input.description = dto.description;
-    if (dto.imageUrl !== undefined) input.imageUrl = dto.imageUrl;
     if (dto.packageCost !== undefined) input.packageCost = dto.packageCost;
     if (dto.packageQuantity !== undefined) input.packageQuantity = dto.packageQuantity;
     if (dto.minimumStockAlert !== undefined) input.minimumStockAlert = dto.minimumStockAlert;
@@ -105,6 +111,33 @@ export class MaterialsController {
   @Get(':id/price-history')
   getPriceHistory(@Param('id') id: string): Promise<MaterialPriceHistoryView[]> {
     return this.materialsService.getPriceHistory(id);
+  }
+
+  /**
+   * Multipart upload, field name `file`. Validated for MIME type and size
+   * before it ever reaches `StorageProvider`; stores the relative key
+   * `StorageProviderFactory`'s chosen provider returns, never a
+   * host-qualified URL.
+   */
+  @Post(':id/image')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file'))
+  uploadImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<MaterialView> {
+    const validated = validateImageFile(file, this.env);
+
+    return this.materialsService.setImage(id, {
+      buffer: validated.buffer,
+      mimeType: validated.mimetype,
+    });
+  }
+
+  @Delete(':id/image')
+  @HttpCode(HttpStatus.OK)
+  removeImage(@Param('id') id: string): Promise<MaterialView> {
+    return this.materialsService.removeImage(id);
   }
 
   /**

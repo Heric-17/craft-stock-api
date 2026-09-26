@@ -23,10 +23,6 @@ export class CreateCompositeProductDto {
   @IsString()
   description?: string | null;
 
-  @IsOptional()
-  @IsString()
-  imageUrl?: string | null;
-
   @IsString()
   @Matches(MONEY_DECIMAL_PATTERN, {
     message: 'fixedOperationalCost must be a decimal amount, e.g. "2.50"',

@@ -22,6 +22,7 @@ import {
   UserNotFoundError,
 } from '../../../modules/users/domain/user.error';
 import { DomainError } from '../../domain/errors/domain.error';
+import { ImageUploadFailedError } from '../../domain/errors/image-upload-failed.error';
 import { RequestContextService } from '../../infrastructure/logging/request-context.service';
 import { StructuredLogger } from '../../infrastructure/logging/structured-logger.service';
 
@@ -78,6 +79,9 @@ const DOMAIN_ERROR_STATUS: readonly {
   { error: EmailAlreadyInUseError, status: HttpStatus.CONFLICT },
   // A token pointed at a User id that no longer exists.
   { error: UserNotFoundError, status: HttpStatus.NOT_FOUND },
+  // The storage backend (disk or S3) did not complete an upload or a delete.
+  // Nothing is wrong with the request; it is worth retrying.
+  { error: ImageUploadFailedError, status: HttpStatus.SERVICE_UNAVAILABLE },
 ];
 
 interface DescribedError {

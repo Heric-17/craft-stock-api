@@ -21,10 +21,6 @@ export class CreateMaterialDto {
   @IsString()
   description?: string | null;
 
-  @IsOptional()
-  @IsString()
-  imageUrl?: string | null;
-
   @IsString()
   @Matches(MONEY_DECIMAL_PATTERN, { message: 'packageCost must be a decimal amount, e.g. "12.90"' })
   packageCost!: string;

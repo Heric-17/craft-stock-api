@@ -11,6 +11,9 @@
 # tests
 /coverage
 
+# local image storage (STORAGE_PROVIDER=LOCAL_DISK)
+/uploads
+
 # env
 .env
 .env.local

@@ -5,6 +5,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
 import { Money } from '../../../../shared/domain/money/money';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
+import {
+  STORAGE_PROVIDER_FACTORY,
+  type StorageProviderFactory,
+  type UploadableFile,
+} from '../../../../shared/domain/storage/storage-provider';
 import type { Material } from '../../../materials/domain/material.entity';
 import {
   MATERIAL_REPOSITORY,
@@ -40,6 +45,8 @@ export class CompositeProductsService {
     private readonly compositeProducts: CompositeProductRepository,
     @Inject(MATERIAL_REPOSITORY) private readonly materials: MaterialRepository,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
+    @Inject(STORAGE_PROVIDER_FACTORY)
+    private readonly storageProviderFactory: StorageProviderFactory,
   ) {}
 
   async create(input: CreateCompositeProductInput): Promise<CompositeProductView> {
@@ -50,7 +57,7 @@ export class CompositeProductsService {
       id: productId,
       name: input.name,
       description: input.description,
-      imageUrl: input.imageUrl,
+      imageUrl: null,
       fixedOperationalCost: Money.fromDecimalString(input.fixedOperationalCost),
       profitMargin: input.profitMargin,
       manualPrice: input.manualPrice ? Money.fromDecimalString(input.manualPrice) : null,
@@ -87,7 +94,6 @@ export class CompositeProductsService {
     const changes: Partial<Omit<CompositeProductProps, 'id' | 'createdAt'>> = {};
     if (input.name !== undefined) changes.name = input.name;
     if (input.description !== undefined) changes.description = input.description;
-    if (input.imageUrl !== undefined) changes.imageUrl = input.imageUrl;
     if (input.fixedOperationalCost !== undefined) {
       changes.fixedOperationalCost = Money.fromDecimalString(input.fixedOperationalCost);
     }
@@ -198,6 +204,57 @@ export class CompositeProductsService {
     await this.unitOfWork.runInTransaction(async (ctx) => {
       await ctx.compositeProducts.save(updated);
     });
+
+    const billOfMaterials = await this.findBillOfMaterialsOrThrow(productId);
+    const materialsById = await this.loadMaterialsOrThrow(
+      billOfMaterials.items.map((item) => item.materialId),
+    );
+
+    return CompositeProductViewMapper.toView(updated, billOfMaterials, materialsById);
+  }
+
+  /**
+   * Uploads via the currently selected `StorageProvider` before touching the
+   * database, and deletes the previous image only after the new key is
+   * saved — so a failure at either step never leaves `imageUrl` pointing at
+   * nothing, and at worst leaves an orphaned object in storage rather than a
+   * dangling reference.
+   */
+  async setImage(productId: string, file: UploadableFile): Promise<CompositeProductView> {
+    const now = new Date();
+    const current = await this.findProductOrThrow(productId);
+    const provider = this.storageProviderFactory.create();
+    const newKey = await provider.upload(file);
+    const updated = current.update({ imageUrl: newKey }, now);
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.compositeProducts.save(updated);
+    });
+
+    if (current.imageUrl !== null) {
+      await provider.delete(current.imageUrl);
+    }
+
+    const billOfMaterials = await this.findBillOfMaterialsOrThrow(productId);
+    const materialsById = await this.loadMaterialsOrThrow(
+      billOfMaterials.items.map((item) => item.materialId),
+    );
+
+    return CompositeProductViewMapper.toView(updated, billOfMaterials, materialsById);
+  }
+
+  async removeImage(productId: string): Promise<CompositeProductView> {
+    const now = new Date();
+    const current = await this.findProductOrThrow(productId);
+    const updated = current.update({ imageUrl: null }, now);
+
+    await this.unitOfWork.runInTransaction(async (ctx) => {
+      await ctx.compositeProducts.save(updated);
+    });
+
+    if (current.imageUrl !== null) {
+      await this.storageProviderFactory.create().delete(current.imageUrl);
+    }
 
     const billOfMaterials = await this.findBillOfMaterialsOrThrow(productId);
     const materialsById = await this.loadMaterialsOrThrow(

@@ -21,6 +21,10 @@ describe('validateEnv', () => {
       ARGON2_TIME_COST: 3,
       AUDIT_LOG_RETENTION_DAYS: 180,
       REQUEST_LOG_RETENTION_DAYS: 30,
+      STORAGE_PROVIDER: 'LOCAL_DISK',
+      UPLOADS_DIR: './uploads',
+      S3_REGION: 'us-east-1',
+      MAX_IMAGE_UPLOAD_SIZE_BYTES: 5 * 1024 * 1024,
     });
   });
 
@@ -68,5 +72,27 @@ describe('validateEnv', () => {
         NODE_ENV: 'staging',
       }),
     ).toThrow(/NODE_ENV/);
+  });
+
+  it('fails when STORAGE_PROVIDER is S3 without a bucket name', () => {
+    expect(() =>
+      validateEnv({
+        DATABASE_URL: VALID_DATABASE_URL,
+        JWT_SECRET: VALID_JWT_SECRET,
+        STORAGE_PROVIDER: 'S3',
+      }),
+    ).toThrow(/S3_BUCKET_NAME/);
+  });
+
+  it('accepts STORAGE_PROVIDER S3 once a bucket name is set', () => {
+    const env = validateEnv({
+      DATABASE_URL: VALID_DATABASE_URL,
+      JWT_SECRET: VALID_JWT_SECRET,
+      STORAGE_PROVIDER: 'S3',
+      S3_BUCKET_NAME: 'craftstock-images',
+    });
+
+    expect(env.STORAGE_PROVIDER).toBe('S3');
+    expect(env.S3_BUCKET_NAME).toBe('craftstock-images');
   });
 });
