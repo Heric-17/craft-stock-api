@@ -1,3 +1,5 @@
+import 'dotenv/config';
+
 import { resolve } from 'node:path';
 
 import type { NestExpressApplication } from '@nestjs/platform-express';
