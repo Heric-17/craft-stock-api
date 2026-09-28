@@ -20,7 +20,9 @@ export class PrismaUnitOfWork implements UnitOfWork {
   ) {}
 
   async runInTransaction<T>(work: (ctx: RepositoryContext) => Promise<T>): Promise<T> {
-    return this.prisma.$transaction((tx) => this.txContext.run(tx, () => work(this.buildContext(tx))));
+    return this.prisma.$transaction((tx) =>
+      this.txContext.run(tx, () => work(this.buildContext(tx))),
+    );
   }
 
   private buildContext(tx: Prisma.TransactionClient): RepositoryContext {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { ImageUploadFailedError } from '../../domain/errors/image-upload-failed.error';
 import type {
   StorageProvider,
   StorageProviderFactory,
@@ -23,6 +24,18 @@ export class InMemoryStorageProvider implements StorageProvider {
 
   has(key: string): boolean {
     return this.filesByKey.has(key);
+  }
+}
+
+/**
+ * Stores uploads like its parent but always fails to delete, so a test can
+ * exercise the cleanup path without mocking a real backend. `has` still
+ * reports the key as present, which is the point: the object stays orphaned
+ * in storage while the operation itself has to succeed anyway.
+ */
+export class DeleteFailingStorageProvider extends InMemoryStorageProvider {
+  override delete(key: string): Promise<void> {
+    return Promise.reject(new ImageUploadFailedError(`Failed to delete image (key ${key}).`));
   }
 }
 

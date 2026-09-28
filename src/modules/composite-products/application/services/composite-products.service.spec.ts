@@ -3,7 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { Money } from '../../../../shared/domain/money/money';
 import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistence/in-memory-unit-of-work';
 import type { RepositoryContext } from '../../../../shared/domain/persistence/unit-of-work';
+import type { EnvService } from '../../../../config/env.service';
+import { RequestContextService } from '../../../../shared/infrastructure/logging/request-context.service';
+import { StructuredLogger } from '../../../../shared/infrastructure/logging/structured-logger.service';
 import {
+  DeleteFailingStorageProvider,
   InMemoryStorageProvider,
   InMemoryStorageProviderFactory,
 } from '../../../../shared/infrastructure/storage/in-memory-storage-provider';
@@ -25,11 +29,22 @@ import { InMemoryCompositeProductRepository } from '../../infrastructure/persist
 import type { CreateCompositeProductInput } from '../dto/composite-products.dto';
 import { CompositeProductsService } from './composite-products.service';
 
-function buildService(): {
+function silentLogger(): StructuredLogger {
+  const logger = new StructuredLogger(
+    { get: () => 'error' } as unknown as EnvService,
+    new RequestContextService(),
+  );
+  jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+
+  return logger;
+}
+
+function buildService(storage: InMemoryStorageProvider = new InMemoryStorageProvider()): {
   service: CompositeProductsService;
   materials: InMemoryMaterialRepository;
   compositeProducts: InMemoryCompositeProductRepository;
   storage: InMemoryStorageProvider;
+  logger: StructuredLogger;
 } {
   const materials = new InMemoryMaterialRepository();
   const compositeProducts = new InMemoryCompositeProductRepository();
@@ -42,7 +57,7 @@ function buildService(): {
     users: new InMemoryUserRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
   };
-  const storage = new InMemoryStorageProvider();
+  const logger = silentLogger();
 
   return {
     service: new CompositeProductsService(
@@ -50,10 +65,12 @@ function buildService(): {
       materials,
       new InMemoryUnitOfWork(context),
       new InMemoryStorageProviderFactory(storage),
+      logger,
     ),
     materials,
     compositeProducts,
     storage,
+    logger,
   };
 }
 
@@ -369,6 +386,38 @@ describe('CompositeProductsService', () => {
         service.setImage('missing', { buffer: Buffer.from('x'), mimeType: 'image/png' }),
       ).rejects.toThrow(CompositeProductNotFoundError);
     });
+
+    /**
+     * The cleanup of the replaced image runs after the transaction committed,
+     * so letting its failure escape would report a durable write as a 503 and
+     * invite a pointless retry. The orphan is logged instead.
+     */
+    it('still succeeds when deleting the replaced image fails', async () => {
+      const storage = new DeleteFailingStorageProvider();
+      const { service, compositeProducts, logger } = buildService(storage);
+      const created = await service.create(buildCreateInput());
+
+      const first = await service.setImage(created.id, {
+        buffer: Buffer.from('first'),
+        mimeType: 'image/jpeg',
+      });
+      const firstKey = first.imageUrl as string;
+
+      const second = await service.setImage(created.id, {
+        buffer: Buffer.from('second'),
+        mimeType: 'image/jpeg',
+      });
+
+      expect(second.imageUrl).not.toBe(firstKey);
+      expect(storage.has(second.imageUrl as string)).toBe(true);
+      expect((await compositeProducts.findById(created.id))?.imageUrl).toBe(second.imageUrl);
+      expect(storage.has(firstKey)).toBe(true);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining(firstKey),
+        undefined,
+        'CompositeProductsService',
+      );
+    });
   });
 
   describe('removeImage', () => {
@@ -394,6 +443,28 @@ describe('CompositeProductsService', () => {
       const cleared = await service.removeImage(created.id);
 
       expect(cleared.imageUrl).toBeNull();
+    });
+
+    it('clears imageUrl even when deleting the stored image fails', async () => {
+      const storage = new DeleteFailingStorageProvider();
+      const { service, compositeProducts, logger } = buildService(storage);
+      const created = await service.create(buildCreateInput());
+      const withImage = await service.setImage(created.id, {
+        buffer: Buffer.from('bytes'),
+        mimeType: 'image/webp',
+      });
+      const key = withImage.imageUrl as string;
+
+      const cleared = await service.removeImage(created.id);
+
+      expect(cleared.imageUrl).toBeNull();
+      expect((await compositeProducts.findById(created.id))?.imageUrl).toBeNull();
+      expect(storage.has(key)).toBe(true);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining(key),
+        undefined,
+        'CompositeProductsService',
+      );
     });
   });
 });

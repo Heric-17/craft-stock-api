@@ -1,0 +1,20 @@
+# Normalise every text file to LF in the repository and check it back out as
+# LF on every platform, overriding whatever core.autocrlf is set to locally.
+#
+# Without this, core.autocrlf=true writes CRLF into the working tree on
+# Windows while .prettierrc requires "endOfLine": "lf" — so every file fails
+# the linter immediately after a clone, and the suite only passes on Linux.
+# Declaring the convention in the repository keeps it independent of each
+# developer's global Git configuration.
+* text=auto eol=lf
+
+# Binaries: left byte-for-byte, never line-ending converted, regardless of
+# what Git's text/binary heuristic would guess. None are tracked today; this
+# is here so the first image or PDF added does not get mangled.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.pdf binary

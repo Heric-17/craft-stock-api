@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 
+import { discardStoredImage } from '../../../../shared/application/storage/discard-stored-image';
 import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
 import { Money } from '../../../../shared/domain/money/money';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
@@ -10,6 +11,7 @@ import {
   type StorageProviderFactory,
   type UploadableFile,
 } from '../../../../shared/domain/storage/storage-provider';
+import { StructuredLogger } from '../../../../shared/infrastructure/logging/structured-logger.service';
 import type { Material } from '../../../materials/domain/material.entity';
 import {
   MATERIAL_REPOSITORY,
@@ -47,6 +49,7 @@ export class CompositeProductsService {
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
     @Inject(STORAGE_PROVIDER_FACTORY)
     private readonly storageProviderFactory: StorageProviderFactory,
+    private readonly logger: StructuredLogger,
   ) {}
 
   async create(input: CreateCompositeProductInput): Promise<CompositeProductView> {
@@ -232,7 +235,12 @@ export class CompositeProductsService {
     });
 
     if (current.imageUrl !== null) {
-      await provider.delete(current.imageUrl);
+      await discardStoredImage(
+        provider,
+        current.imageUrl,
+        this.logger,
+        CompositeProductsService.name,
+      );
     }
 
     const billOfMaterials = await this.findBillOfMaterialsOrThrow(productId);
@@ -253,7 +261,12 @@ export class CompositeProductsService {
     });
 
     if (current.imageUrl !== null) {
-      await this.storageProviderFactory.create().delete(current.imageUrl);
+      await discardStoredImage(
+        this.storageProviderFactory.create(),
+        current.imageUrl,
+        this.logger,
+        CompositeProductsService.name,
+      );
     }
 
     const billOfMaterials = await this.findBillOfMaterialsOrThrow(productId);

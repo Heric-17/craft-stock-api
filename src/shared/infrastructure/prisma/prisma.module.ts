@@ -28,6 +28,14 @@ import { PrismaTransactionContextService } from './prisma-transaction-context.se
         // `getFallbackClient` is resolved lazily: the extension needs to
         // reference "the client this extension produces" from inside its own
         // definition, which doesn't exist yet while `$extends` is building it.
+        //
+        // `prefer-const` is disabled rather than obeyed: the declaration has
+        // to precede the `$extends` call that assigns it, so that the closure
+        // handed to `createAuditExtension` can capture the binding before the
+        // client exists. Folding the assignment into a `const` initialiser
+        // that refers to itself would satisfy the rule while obscuring the
+        // one thing this wiring is about.
+        // eslint-disable-next-line prefer-const
         let client: unknown;
         const extension = createAuditExtension(requestContext, txContext, () => client as never);
         client = prisma.$extends(extension);

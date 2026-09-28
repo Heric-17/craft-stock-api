@@ -134,7 +134,8 @@ describe('there is no AuditLogRepository', () => {
    * "Repository".
    */
   it('no file declares one', () => {
-    const declaration = /(?:interface|class|const)\s+(?:\w*AuditLogRepository|AUDIT_LOG_REPOSITORY)\b/;
+    const declaration =
+      /(?:interface|class|const)\s+(?:\w*AuditLogRepository|AUDIT_LOG_REPOSITORY)\b/;
     const offenders = sourceFiles().filter((file) => declaration.test(read(file)));
 
     expect(offenders).toEqual([]);
