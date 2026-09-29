@@ -5,7 +5,11 @@ import { LoggingModule } from '../../shared/infrastructure/logging/logging.modul
 import { UNIT_OF_WORK } from '../../shared/domain/persistence/unit-of-work';
 import { InvoiceImportFacade } from './application/facades/invoice-import.facade';
 import { InvoiceClassificationService } from './application/services/invoice-classification.service';
+import { NfceCanaryService } from './application/services/nfce-canary.service';
 import { PendingInvoicesService } from './application/services/pending-invoices.service';
+import { PINNED_REFERENCE_INVOICES } from './domain/canary/pinned-reference-invoices';
+import { REFERENCE_INVOICES } from './domain/canary/reference-invoice';
+import { NOTIFICATION_SENDER_FACTORY } from '../../shared/domain/notifications/notification-sender';
 import { DELAY } from './domain/ports/delay.port';
 import { HTTP_CLIENT } from './domain/ports/http-client.port';
 import {
@@ -37,6 +41,11 @@ describe('InvoicesModule wiring', () => {
         { provide: UNIT_OF_WORK, useValue: { runInTransaction: () => Promise.resolve(null) } },
         { provide: HTTP_CLIENT, useClass: FetchHttpClient },
         { provide: DELAY, useClass: TimerDelay },
+        {
+          provide: NOTIFICATION_SENDER_FACTORY,
+          useValue: { create: () => ({ send: () => Promise.resolve() }) },
+        },
+        { provide: REFERENCE_INVOICES, useValue: PINNED_REFERENCE_INVOICES },
         ScrapingRsProvider,
         ScrapingSpProvider,
         OfficialWebserviceProvider,
@@ -44,11 +53,13 @@ describe('InvoicesModule wiring', () => {
         InvoiceImportFacade,
         InvoiceClassificationService,
         PendingInvoicesService,
+        NfceCanaryService,
       ],
     }).compile();
 
     expect(moduleRef.get(InvoiceImportFacade)).toBeInstanceOf(InvoiceImportFacade);
     expect(moduleRef.get(InvoicesController)).toBeInstanceOf(InvoicesController);
+    expect(moduleRef.get(NfceCanaryService)).toBeInstanceOf(NfceCanaryService);
 
     /**
      * The acceptance criterion for the Factory pattern: the factory hands

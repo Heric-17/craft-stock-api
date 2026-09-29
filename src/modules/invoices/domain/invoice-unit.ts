@@ -27,6 +27,7 @@ const KNOWN_UNITS = [
   'DZ',
   'FD',
   'BDJ',
+  'GFA',
 ] as const;
 
 /** `UND9` -> `UND`, `KG9` -> `KG`. Nothing else is touched. */

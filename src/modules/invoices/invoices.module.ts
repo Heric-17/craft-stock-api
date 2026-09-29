@@ -2,11 +2,15 @@ import { Module } from '@nestjs/common';
 
 import { EnvModule } from '../../config/env.module';
 import { LoggingModule } from '../../shared/infrastructure/logging/logging.module';
+import { NotificationsModule } from '../../shared/infrastructure/notifications/notifications.module';
 import { PrismaModule } from '../../shared/infrastructure/prisma/prisma.module';
 import { UnitOfWorkModule } from '../../shared/infrastructure/persistence/unit-of-work.module';
 import { InvoiceImportFacade } from './application/facades/invoice-import.facade';
 import { InvoiceClassificationService } from './application/services/invoice-classification.service';
+import { NfceCanaryService } from './application/services/nfce-canary.service';
 import { PendingInvoicesService } from './application/services/pending-invoices.service';
+import { PINNED_REFERENCE_INVOICES } from './domain/canary/pinned-reference-invoices';
+import { REFERENCE_INVOICES } from './domain/canary/reference-invoice';
 import { DELAY } from './domain/ports/delay.port';
 import { HTTP_CLIENT } from './domain/ports/http-client.port';
 import { INVOICE_PROVIDER_FACTORY } from './domain/providers/invoice-provider';
@@ -21,7 +25,7 @@ import { InvoicesController } from './presentation/invoices.controller';
 import { TimerDelay } from './infrastructure/time/timer-delay';
 
 @Module({
-  imports: [EnvModule, LoggingModule, PrismaModule, UnitOfWorkModule],
+  imports: [EnvModule, LoggingModule, NotificationsModule, PrismaModule, UnitOfWorkModule],
   controllers: [InvoicesController],
   providers: [
     { provide: PENDING_INVOICE_REPOSITORY, useClass: PrismaPendingInvoiceRepository },
@@ -38,6 +42,11 @@ import { TimerDelay } from './infrastructure/time/timer-delay';
     InvoiceImportFacade,
     InvoiceClassificationService,
     PendingInvoicesService,
+    // The expectations are data, not behaviour, and arrive by token like
+    // everything else: the canary compares against whatever this installation
+    // pinned, and a test can pin its own without touching the file.
+    { provide: REFERENCE_INVOICES, useValue: PINNED_REFERENCE_INVOICES },
+    NfceCanaryService,
   ],
   exports: [PENDING_INVOICE_REPOSITORY, INVOICE_PROVIDER_FACTORY, InvoiceImportFacade],
 })

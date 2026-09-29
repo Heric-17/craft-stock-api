@@ -214,3 +214,32 @@ a contagem do que foi suprimido no intervalo.
 | `SMTP_USER` / `SMTP_PASSWORD` | não | — | Credenciais, quando o servidor exige |
 | `ALERT_EMAIL_FROM` | só com `SMTP` | — | Remetente |
 | `ALERT_EMAIL_TO` | só com `SMTP` | — | Destinatário(s), separados por vírgula |
+
+### Canário da extração de NFC-e
+
+O scraping do portal da SEFAZ depende de marcação que ninguém aqui controla e que muda
+sem aviso. Sem vigilância, a quebra só apareceria para o usuário que tentasse importar
+uma nota no caixa. Um job diário relê notas de referência já conhecidas e compara o
+resultado com valores fixados em código: nome do estabelecimento, total da nota e
+quantidade de itens.
+
+As URLs das notas ficam em `NFCE_CANARY_URLS`; os valores esperados ficam em
+[pinned-reference-invoices.ts](src/modules/invoices/domain/canary/pinned-reference-invoices.ts),
+identificados pela chave de acesso que viaja dentro da própria URL — o par não depende de
+ordem nem de índice. Lista vazia desliga o canário, que é o estado correto em
+desenvolvimento e nos testes.
+
+**O alarme só dispara quando TODAS as notas de referência falham.** A consulta pública da
+NFC-e não fica disponível indefinidamente, então uma nota que emudece enquanto as outras
+continuam legíveis é idade daquela nota, não quebra do portal. Por isso configure duas ou
+três, de datas claramente diferentes: com uma só não há como distinguir os dois casos, e o
+canário avisa isso em cada execução.
+
+O canário **nunca escreve em `test/fixtures/`**. Repovoar a fixture automaticamente faria
+os testes do scraper validarem a marcação nova e continuarem verdes, destruindo justamente
+o alarme que ele existe para dar. Fixture muda por decisão humana, depois de alguém olhar
+o que o portal fez.
+
+| Variável | Obrigatória | Padrão | Descrição |
+| --- | --- | --- | --- |
+| `NFCE_CANARY_URLS` | não | — | URLs das notas de referência, separadas por vírgula ou espaço; vazio desliga |

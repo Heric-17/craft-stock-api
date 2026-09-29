@@ -54,6 +54,15 @@ export const envSchema = z
     NFCE_IMPORT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
     // Base of the progressive wait between attempts, doubled each time.
     NFCE_IMPORT_RETRY_DELAY_MS: z.coerce.number().int().min(0).max(60_000).default(1_000),
+    // URLs of the reference notes the daily canary reads back, separated by
+    // commas or whitespace. The values each one has to extract to are pinned in
+    // code, next to the access key that pairs them with the URL; this variable
+    // carries only the URLs, because they are the part that differs per
+    // installation. Empty disables the canary, which is what development and
+    // the test suite want. Kept as a plain string and split where it is used:
+    // a transform here would hand back the raw string anyway once the variable
+    // is really set in the environment.
+    NFCE_CANARY_URLS: z.string().default(''),
     // HMAC signing key for session JWTs. Required with no default: a hardcoded
     // fallback would mean every installation that forgets to set it shares the
     // same key.

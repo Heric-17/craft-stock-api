@@ -7,6 +7,8 @@ describe('normalizeInvoiceUnit', () => {
     ['KG9', 'KG'],
     ['PCT9', 'PCT'],
     ['PC', 'PC'],
+    // A bottle, as the RS portal prints it on a soft drink line.
+    ['GFA9', 'GFA'],
     ['kg', 'KG'],
   ])('normalizes %s to %s for display', (raw, display) => {
     const unit = normalizeInvoiceUnit(raw);

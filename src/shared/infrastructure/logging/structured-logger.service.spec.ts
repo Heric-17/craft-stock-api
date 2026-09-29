@@ -14,6 +14,7 @@ function envWithLogLevel(level: LogLevel): EnvService {
     NFCE_PROVIDER: 'AUTO',
     NFCE_IMPORT_MAX_ATTEMPTS: 3,
     NFCE_IMPORT_RETRY_DELAY_MS: 1_000,
+    NFCE_CANARY_URLS: '',
     JWT_SECRET: 'a'.repeat(32),
     JWT_EXPIRES_IN_SECONDS: 900,
     REFRESH_TOKEN_EXPIRES_IN_SECONDS: 2_592_000,
