@@ -25,6 +25,10 @@ const BASE_ENV: Env = {
   UPLOADS_DIR: './uploads',
   S3_REGION: 'us-east-1',
   MAX_IMAGE_UPLOAD_SIZE_BYTES: 5 * 1024 * 1024,
+  NOTIFICATION_SENDER: 'CONSOLE',
+  ERROR_ALERT_THROTTLE_SECONDS: 300,
+  SMTP_PORT: 587,
+  SMTP_SECURE: false,
 };
 
 function envService(overrides: Partial<Env> = {}): EnvService {

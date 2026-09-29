@@ -7,6 +7,7 @@ import {
   InvoiceSourceUnavailableError,
   InvoiceStructureChangedError,
 } from '../../../modules/invoices/domain/invoice.error';
+import type { ErrorAlertService } from '../../application/observability/error-alert.service';
 import { DomainError } from '../../domain/errors/domain.error';
 import { RequestContextService } from '../../infrastructure/logging/request-context.service';
 import type { StructuredLogger } from '../../infrastructure/logging/structured-logger.service';
@@ -26,6 +27,7 @@ interface Captured {
 describe('AllExceptionsFilter', () => {
   let requestContext: RequestContextService;
   let logger: { error: jest.Mock; warn: jest.Mock };
+  let notifyServerError: jest.Mock;
   let filter: AllExceptionsFilter;
   let captured: Captured;
   let host: ArgumentsHost;
@@ -33,7 +35,10 @@ describe('AllExceptionsFilter', () => {
   beforeEach(() => {
     requestContext = new RequestContextService();
     logger = { error: jest.fn(), warn: jest.fn() };
-    filter = new AllExceptionsFilter(logger as unknown as StructuredLogger, requestContext);
+    notifyServerError = jest.fn().mockResolvedValue(undefined);
+    filter = new AllExceptionsFilter(logger as unknown as StructuredLogger, requestContext, {
+      notifyServerError,
+    } as unknown as ErrorAlertService);
     captured = { status: 0, body: {} as ErrorResponseBody };
 
     const response = {
@@ -182,6 +187,97 @@ describe('AllExceptionsFilter', () => {
       filter.catch(new InsufficientStockError(), host);
 
       expect(captured.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+    });
+  });
+
+  /**
+   * The filter is the only place that sees every failure, so it is where the
+   * cause is recorded for the request row the middleware writes afterwards.
+   */
+  describe('recording the cause on the request context', () => {
+    it('records type, message and stack of an unexpected failure', () => {
+      requestContext.run({ correlationId: 'c1', transactionId: 't1' }, () => {
+        filter.catch(new Error('connect ECONNREFUSED 127.0.0.1:5432'), host);
+
+        expect(requestContext.error).toMatchObject({
+          errorType: 'Error',
+          errorMessage: 'connect ECONNREFUSED 127.0.0.1:5432',
+        });
+        expect(requestContext.error?.stackTrace).toContain('Error');
+      });
+    });
+
+    it('records the domain error class, not a generic one', () => {
+      requestContext.run({ correlationId: 'c1', transactionId: 't1' }, () => {
+        filter.catch(new InsufficientStockError(), host);
+
+        expect(requestContext.error?.errorType).toBe('InsufficientStockError');
+      });
+    });
+
+    it('keeps the violations of a validation failure as context', () => {
+      requestContext.run({ correlationId: 'c1', transactionId: 't1' }, () => {
+        filter.catch(new BadRequestException(['name should not be empty']), host);
+
+        expect(requestContext.error?.errorContext).toContain('name should not be empty');
+      });
+    });
+
+    it('redacts a credential that reached the message', () => {
+      requestContext.run({ correlationId: 'c1', transactionId: 't1' }, () => {
+        filter.catch(new Error('login failed for password=hunter2'), host);
+
+        const recorded = JSON.stringify(requestContext.error);
+        expect(recorded).not.toContain('hunter2');
+        expect(recorded).toContain('[REDACTED]');
+      });
+    });
+
+    it('records nothing when there is no open request context', () => {
+      expect(() => filter.catch(new Error('boom'), host)).not.toThrow();
+    });
+  });
+
+  describe('alerting', () => {
+    it('raises an alert for a server error, carrying the errorId', () => {
+      requestContext.run({ correlationId: 'alert-id', transactionId: 't1' }, () => {
+        filter.catch(new Error('boom'), host);
+      });
+
+      expect(notifyServerError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errorType: 'Error',
+          message: 'boom',
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          httpMethod: 'GET',
+          correlationId: 'alert-id',
+        }),
+      );
+    });
+
+    it('does not alert on a client error', () => {
+      filter.catch(new NotFoundException('Material not found'), host);
+
+      expect(notifyServerError).not.toHaveBeenCalled();
+    });
+
+    it('alerts with the redacted message, never the raw one', () => {
+      filter.catch(new Error('token=abc123 rejected'), host);
+
+      const [alert] = notifyServerError.mock.calls[0] as [{ message: string }];
+      expect(alert.message).not.toContain('abc123');
+    });
+
+    /** An alert is a side effect. A broken alert channel must not change the response. */
+    it('still answers the request when raising the alert fails', async () => {
+      notifyServerError.mockRejectedValueOnce(new Error('smtp down'));
+
+      filter.catch(new Error('boom'), host);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(captured.status).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+      expect(captured.body.message).toBe('Internal server error');
+      expect(logger.error).toHaveBeenCalled();
     });
   });
 });

@@ -156,4 +156,61 @@ de origem atualizarem.
 Toda linha de log é um JSON com `timestamp`, `level`, `message`, `context` e
 `correlationId`. O correlation id vem do header `x-correlation-id` quando o cliente
 envia, e é gerado quando não; ele volta no header da resposta e aparece no corpo de
-qualquer erro.
+qualquer erro. Nenhuma linha de log carrega senha, hash, token ou CPF: a redação é
+aplicada no próprio sink, não em cada ponto de chamada.
+
+### Registro de falha
+
+Não existe tabela separada de erro. `RequestLog` — uma linha por requisição mutante,
+gravada FORA da transação de negócio, para sobreviver ao rollback da requisição que
+descreve — guarda também o motivo da falha, preenchido só quando houve falha:
+
+| Campo | Conteúdo |
+| --- | --- |
+| `errorType` | classe da exceção (`InsufficientStockError`, `PrismaClientKnownRequestError`) |
+| `errorMessage` | mensagem, redigida |
+| `stackTrace` | rastro técnico, redigido |
+| `errorContext` | propriedades escalares da exceção e violações de validação |
+
+O que pode ser escrito nesses quatro campos é decidido por `describeFailure`, em
+[src/shared/domain/observability/error-details.ts](src/shared/domain/observability/error-details.ts):
+valor de propriedade sensível é omitido, senha/token/CPF são redigidos e propriedade
+cujo valor é objeto é descartada — é o que mantém payload de nota, corpo de requisição
+e entidade inteira fora do registro.
+
+A retenção é a que já existia: as mesmas janelas de `AUDIT_LOG_RETENTION_DAYS` e
+`REQUEST_LOG_RETENTION_DAYS`, no mesmo job diário.
+
+### Investigação
+
+Um erro 500 devolve `errorId`, igual ao correlation id. Com ele, uma consulta devolve
+causa, requisição e escritas juntas:
+
+```
+GET /audit-log/investigate?errorId=<errorId>
+```
+
+Aceita também `correlationId` ou `transactionId`. A resposta traz a linha de
+`RequestLog` (com os campos de erro acima) e, em ordem, toda escrita feita pela mesma
+requisição.
+
+### Alertas operacionais
+
+Erro não tratado dispara alerta por um contrato, `NotificationSender`, nunca por
+chamada direta a um cliente de e-mail. Quem alerta conhece só o contrato; acrescentar
+Discord, Telegram ou webhook é implementação nova. Falha no envio do alerta é
+registrada em log e nunca derruba o que a originou.
+
+O alerta é limitado por `errorType`: um erro em laço gera uma mensagem e, na próxima,
+a contagem do que foi suprimido no intervalo.
+
+| Variável | Obrigatória | Padrão | Descrição |
+| --- | --- | --- | --- |
+| `NOTIFICATION_SENDER` | não | `CONSOLE` | `CONSOLE` (log) \| `SMTP` (e-mail) |
+| `ERROR_ALERT_THROTTLE_SECONDS` | não | `300` | Silêncio por `errorType` após um alerta; `0` desliga |
+| `SMTP_HOST` | só com `SMTP` | — | Servidor SMTP |
+| `SMTP_PORT` | não | `587` | Porta SMTP |
+| `SMTP_SECURE` | não | `false` | `true` \| `false` |
+| `SMTP_USER` / `SMTP_PASSWORD` | não | — | Credenciais, quando o servidor exige |
+| `ALERT_EMAIL_FROM` | só com `SMTP` | — | Remetente |
+| `ALERT_EMAIL_TO` | só com `SMTP` | — | Destinatário(s), separados por vírgula |

@@ -42,7 +42,8 @@ function uncapitalize(model: string): string {
 
 /**
  * Builds the Prisma query extension that captures every write generically —
- * see CLAUDE.md §15.2. Registered once, in `prisma.module.ts`, via
+ * see section 15.2 of the project notes. Registered once, in
+ * `prisma.module.ts`, via
  * `prismaService.$extends(createAuditExtension(...))`.
  *
  * ---

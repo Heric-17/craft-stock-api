@@ -70,10 +70,59 @@ describe('RequestContextService', () => {
     });
   });
 
-  it('setUserId, setIntent and setRoute outside a run are no-ops, not throws', () => {
+  it('setUserId, setIntent, setRoute and setError outside a run are no-ops, not throws', () => {
     expect(() => service.setUserId('orphan')).not.toThrow();
     expect(() => service.setIntent('orphan')).not.toThrow();
     expect(() => service.setRoute('GET', '/orphan')).not.toThrow();
+    expect(() =>
+      service.setError({
+        errorType: 'Error',
+        errorMessage: 'orphan',
+        stackTrace: null,
+        errorContext: null,
+      }),
+    ).not.toThrow();
+  });
+
+  /**
+   * The handover from the exception filter, which records the cause, to the
+   * middleware, which writes it onto the request row after the response has
+   * been sent.
+   */
+  it('lets the exception filter record why the request failed', () => {
+    service.run({ correlationId: 'with-error', transactionId: 'txn-with-error' }, () => {
+      expect(service.error).toBeUndefined();
+
+      service.setError({
+        errorType: 'InsufficientStockError',
+        errorMessage: 'Not enough stock',
+        stackTrace: 'Error: Not enough stock',
+        errorContext: null,
+      });
+
+      expect(service.error?.errorType).toBe('InsufficientStockError');
+      expect(service.current?.error?.errorMessage).toBe('Not enough stock');
+    });
+  });
+
+  it('keeps the recorded failure isolated between concurrent runs', async () => {
+    const observe = (id: string): Promise<string | undefined> =>
+      service.run({ correlationId: id, transactionId: `txn-${id}` }, async () => {
+        service.setError({
+          errorType: `Error-${id}`,
+          errorMessage: 'boom',
+          stackTrace: null,
+          errorContext: null,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 5));
+
+        return service.error?.errorType;
+      });
+
+    await expect(Promise.all([observe('one'), observe('two')])).resolves.toEqual([
+      'Error-one',
+      'Error-two',
+    ]);
   });
 
   it('keeps userId isolated between concurrent runs', async () => {

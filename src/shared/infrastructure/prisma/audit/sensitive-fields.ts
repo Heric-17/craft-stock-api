@@ -1,11 +1,9 @@
+import { isSensitiveField } from '../../../domain/observability/sensitive-data';
 import type { FieldChanges } from './build-field-changes';
 
-/** CLAUDE.md §16: never persist or log a password, its hash, a token, or a CPF. */
-const SENSITIVE_FIELD_PATTERN = /password|hash|token|cpf/i;
-
-export function isSensitiveField(fieldName: string): boolean {
-  return SENSITIVE_FIELD_PATTERN.test(fieldName);
-}
+// §16's rule — what must never be persisted or logged — is stated once, in
+// domain/observability, and applied here to a diff and there to free text.
+export { isSensitiveField };
 
 /**
  * Drops sensitive fields entirely from a diff — not masked, absent — so a

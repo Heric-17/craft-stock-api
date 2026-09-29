@@ -1,3 +1,5 @@
+import type { RequestErrorDetails } from './error-details';
+
 export const REQUEST_LOG_WRITER = Symbol('REQUEST_LOG_WRITER');
 
 export interface RequestLogEntry {
@@ -9,6 +11,12 @@ export interface RequestLogEntry {
   statusCode: number;
   durationMs: number;
   errorId: string | null;
+  /**
+   * Why it failed, when it failed — the same row that says a request happened
+   * says what went wrong in it, so cause and effect come back in one query.
+   * Null on every request that succeeded.
+   */
+  error: RequestErrorDetails | null;
 }
 
 /**

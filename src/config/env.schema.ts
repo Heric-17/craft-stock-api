@@ -27,6 +27,16 @@ export const STORAGE_PROVIDERS = ['LOCAL_DISK', 'S3'] as const;
 
 export type StorageProviderKind = (typeof STORAGE_PROVIDERS)[number];
 
+/**
+ * Which channel operational alerts leave through. `CONSOLE` writes them to the
+ * structured log, which is what development and the test suite want; `SMTP`
+ * mails them to whoever maintains the installation. Selected for the whole
+ * installation by this one variable, per NotificationSenderFactory.
+ */
+export const NOTIFICATION_SENDERS = ['CONSOLE', 'SMTP'] as const;
+
+export type NotificationSenderKind = (typeof NOTIFICATION_SENDERS)[number];
+
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(NODE_ENVS).default('development'),
@@ -86,6 +96,29 @@ export const envSchema = z
       .int()
       .positive()
       .default(5 * 1024 * 1024),
+    NOTIFICATION_SENDER: z.enum(NOTIFICATION_SENDERS).default('CONSOLE'),
+    // How long one errorType stays quiet after an alert for it went out. An
+    // error inside a loop must not turn into hundreds of messages, and the
+    // count of what was suppressed rides along on the next alert. Zero
+    // disables the throttle, which is only ever useful in a test.
+    ERROR_ALERT_THROTTLE_SECONDS: z.coerce.number().int().min(0).default(300),
+    // SMTP settings, all optional here and required below only when
+    // NOTIFICATION_SENDER is SMTP: a development boot must not have to
+    // configure a mail server it never talks to.
+    SMTP_HOST: z.string().min(1).optional(),
+    SMTP_PORT: z.coerce.number().int().positive().max(65535).default(587),
+    // Spelled out as the two literals rather than coerced: `Boolean('false')`
+    // is true, so coercion here would silently turn the value off by turning
+    // it on.
+    SMTP_SECURE: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    SMTP_USER: z.string().min(1).optional(),
+    SMTP_PASSWORD: z.string().min(1).optional(),
+    ALERT_EMAIL_FROM: z.string().email().optional(),
+    // One address, or several separated by commas.
+    ALERT_EMAIL_TO: z.string().min(1).optional(),
   })
   .superRefine((env, ctx) => {
     if (env.STORAGE_PROVIDER === 'S3' && !env.S3_BUCKET_NAME) {
@@ -94,6 +127,23 @@ export const envSchema = z
         path: ['S3_BUCKET_NAME'],
         message: 'is required when STORAGE_PROVIDER is S3',
       });
+    }
+
+    if (env.NOTIFICATION_SENDER !== 'SMTP') {
+      return;
+    }
+
+    // Checked at startup rather than on the first alert: an installation that
+    // discovers its alerting is misconfigured at the moment it needs to alert
+    // has no alerting at all.
+    for (const key of ['SMTP_HOST', 'ALERT_EMAIL_FROM', 'ALERT_EMAIL_TO'] as const) {
+      if (!env[key]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: 'is required when NOTIFICATION_SENDER is SMTP',
+        });
+      }
     }
   });
 

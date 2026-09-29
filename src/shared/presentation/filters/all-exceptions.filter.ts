@@ -21,8 +21,13 @@ import {
   EmailAlreadyInUseError,
   UserNotFoundError,
 } from '../../../modules/users/domain/user.error';
+import { ErrorAlertService } from '../../application/observability/error-alert.service';
 import { DomainError } from '../../domain/errors/domain.error';
 import { ImageUploadFailedError } from '../../domain/errors/image-upload-failed.error';
+import {
+  describeFailure,
+  type RequestErrorDetails,
+} from '../../domain/observability/error-details';
 import { RequestContextService } from '../../infrastructure/logging/request-context.service';
 import { StructuredLogger } from '../../infrastructure/logging/structured-logger.service';
 
@@ -94,12 +99,20 @@ interface DescribedError {
 /**
  * Single exit point for every failure: one response shape, one place where the
  * error is logged, and no internal detail leaking to the client on a 500.
+ *
+ * It is also the only place that sees every failure, which makes it the place
+ * that records the cause on the request context — the middleware writes that
+ * onto the `RequestLog` row once the response is out — and the place that
+ * raises the operational alert. Neither is done inline: what may be written
+ * about a failure is decided by `describeFailure`, and whether an alert is
+ * worth sending by `ErrorAlertService`.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   constructor(
     private readonly logger: StructuredLogger,
     private readonly requestContext: RequestContextService,
+    private readonly alerts: ErrorAlertService,
   ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
@@ -108,6 +121,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const request = http.getRequest<Request>();
 
     const described = this.describe(exception);
+
+    // Redacted and truncated here, once, by the domain rule — the response
+    // body below deliberately shows the client less than this.
+    const failure = describeFailure(
+      exception,
+      described.details === undefined ? {} : { validationErrors: described.details },
+    );
+
+    this.requestContext.setError(failure);
 
     const body: ErrorResponseBody = {
       statusCode: described.status,
@@ -124,7 +146,30 @@ export class AllExceptionsFilter implements ExceptionFilter {
         : {}),
     };
 
-    this.report(exception, described, request);
+    this.report(exception, failure, described, request);
+
+    if (described.status >= SERVER_ERROR_FLOOR) {
+      // Deliberately not awaited: the response goes out now. The alert
+      // service already swallows its own delivery failures, and the `catch`
+      // here covers the rest — an alert is a side effect of the failure,
+      // never a step in answering the request.
+      void this.alerts
+        .notifyServerError({
+          errorType: failure.errorType,
+          message: failure.errorMessage,
+          route: this.requestContext.route ?? request.url,
+          httpMethod: request.method,
+          statusCode: described.status,
+          correlationId: this.requestContext.correlationId,
+        })
+        .catch((alertError: unknown) => {
+          this.logger.error(
+            `Failed to raise the alert for ${failure.errorType}`,
+            alertError instanceof Error ? alertError.stack : undefined,
+            AllExceptionsFilter.name,
+          );
+        });
+    }
 
     response.status(described.status).json(body);
   }
@@ -175,9 +220,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     };
   }
 
-  private report(exception: unknown, described: DescribedError, request: Request): void {
+  private report(
+    exception: unknown,
+    failure: RequestErrorDetails,
+    described: DescribedError,
+    request: Request,
+  ): void {
     const summary = `${request.method} ${request.url} -> ${described.status} ${described.error}`;
-    const stack = exception instanceof Error ? exception.stack : undefined;
+    // The redacted stack, not `exception.stack`: the log and the request row
+    // get the same text, and neither carries a credential that happened to be
+    // in the message of an exception thrown deeper down.
+    const stack = failure.stackTrace ?? undefined;
 
     // The alarm for the NFC-e scraping having broken. It is logged at error
     // severity whatever its status, because it means the portal changed its
@@ -185,7 +238,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // looks — a warning buried among ordinary refusals would not be seen.
     if (exception instanceof InvoiceStructureChangedError) {
       this.logger.error(
-        `${summary} — NFC-e extraction is structurally broken: ${exception.message}`,
+        `${summary} — NFC-e extraction is structurally broken: ${failure.errorMessage}`,
         stack,
         AllExceptionsFilter.name,
       );

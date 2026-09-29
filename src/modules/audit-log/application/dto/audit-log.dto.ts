@@ -32,6 +32,10 @@ export interface RequestLogView {
   statusCode: number;
   durationMs: number;
   errorId: string | null;
+  errorType: string | null;
+  errorMessage: string | null;
+  stackTrace: string | null;
+  errorContext: string | null;
 }
 
 export interface AuditTrailPageView {

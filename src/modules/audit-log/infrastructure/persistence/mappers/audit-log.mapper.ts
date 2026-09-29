@@ -32,6 +32,10 @@ interface RequestLogRow {
   statusCode: number;
   durationMs: number;
   errorId: string | null;
+  errorType: string | null;
+  errorMessage: string | null;
+  stackTrace: string | null;
+  errorContext: string | null;
 }
 
 export const AuditLogMapper = {
@@ -65,6 +69,10 @@ export const AuditLogMapper = {
       statusCode: row.statusCode,
       durationMs: row.durationMs,
       errorId: row.errorId,
+      errorType: row.errorType,
+      errorMessage: row.errorMessage,
+      stackTrace: row.stackTrace,
+      errorContext: row.errorContext,
     };
   },
 };

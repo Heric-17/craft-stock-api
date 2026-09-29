@@ -303,7 +303,7 @@ enum PendingInvoiceStatus {
 
 // --- Audit trail & request log --------------------------------------------
 // Captured automatically by a Prisma client extension in infrastructure/,
-// never written to by application code. See §15.2 of CLAUDE.md.
+// never written to by application code. See section 15.2 of the project notes.
 
 enum AuditOperation {
   CREATE
@@ -356,9 +356,22 @@ model RequestLog {
   // (§15.1). A separate column because it's what a user-facing error
   // actually hands back for someone to search by.
   errorId       String?
+  // Why the request failed, filled in only when it did. Here rather than in a
+  // table of its own: this row already records which request it was, who made
+  // it, when, and what it wrote, and half of a separate error table would be
+  // those same columns — plus a second query every time someone wants cause
+  // and effect together. Never a password, a hash, a token, a CPF, or a
+  // captured invoice payload: what may be written is decided by
+  // describeFailure, in domain/observability.
+  errorType     String?
+  errorMessage  String?
+  stackTrace    String?
+  errorContext  String?
 
   @@index([correlationId])
   @@index([errorId])
+  // The alert throttle and any "what is failing most" question group by this.
+  @@index([errorType])
 }
 
 model PendingInvoice {

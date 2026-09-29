@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 
+import type { RequestErrorDetails } from '../../domain/observability/error-details';
 import { RequestContextService } from '../../infrastructure/logging/request-context.service';
 import { CORRELATION_ID_HEADER, RequestContextMiddleware } from './request-context.middleware';
 
@@ -12,7 +13,13 @@ interface Harness {
   loggerError: jest.Mock;
   statusCode: number;
   triggerFinish: () => void;
-  run: (options?: { method?: string; inboundCorrelationId?: string; user?: { id: string } }) => {
+  run: (options?: {
+    method?: string;
+    inboundCorrelationId?: string;
+    user?: { id: string };
+    /** Runs inside the open request context, where the exception filter would. */
+    duringRequest?: () => void;
+  }) => {
     seenCorrelationId: string | undefined;
     seenTransactionId: string | undefined;
   };
@@ -63,6 +70,7 @@ function harness(): Harness {
     const next: NextFunction = () => {
       seenCorrelationId = requestContext.correlationId;
       seenTransactionId = requestContext.transactionId;
+      options.duringRequest?.();
     };
 
     middleware.use(req, res, next);
@@ -195,6 +203,55 @@ describe('RequestContextMiddleware', () => {
     await flushMicrotasks();
 
     expect(h.requestLogWrite).toHaveBeenCalledWith(expect.objectContaining({ userId: null }));
+  });
+
+  describe('the failure details', () => {
+    it('writes no error fields for a request that succeeded', async () => {
+      const h = harness();
+      h.statusCode = 201;
+
+      h.run({ method: 'POST' });
+      h.triggerFinish();
+      await flushMicrotasks();
+
+      expect(h.requestLogWrite).toHaveBeenCalledWith(expect.objectContaining({ error: null }));
+    });
+
+    /**
+     * The filter writes the cause onto the context while the request is still
+     * open; this row is written after the response has gone out. The context
+     * object is captured by the closure precisely so the handover does not
+     * depend on the store still resolving by then.
+     */
+    it('carries what the exception filter recorded on the context', async () => {
+      const h = harness();
+      h.statusCode = 500;
+
+      const next = () => {
+        h.requestContext.setError({
+          errorType: 'PrismaClientKnownRequestError',
+          errorMessage: 'deadlock detected',
+          stackTrace: 'Error: deadlock detected\n    at save',
+          errorContext: '{"code":"P2034"}',
+        });
+      };
+
+      h.run({ method: 'POST', duringRequest: next });
+      h.triggerFinish();
+      await flushMicrotasks();
+
+      const [entry] = h.requestLogWrite.mock.calls[0] as [
+        { statusCode: number; error: RequestErrorDetails | null },
+      ];
+
+      expect(entry.statusCode).toBe(500);
+      expect(entry.error).toEqual({
+        errorType: 'PrismaClientKnownRequestError',
+        errorMessage: 'deadlock detected',
+        stackTrace: 'Error: deadlock detected\n    at save',
+        errorContext: '{"code":"P2034"}',
+      });
+    });
   });
 
   it('logs, but does not throw, when writing the RequestLog fails', async () => {

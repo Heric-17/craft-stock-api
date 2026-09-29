@@ -32,6 +32,15 @@ export interface RequestLogEntry {
   statusCode: number;
   durationMs: number;
   errorId: string | null;
+  /**
+   * Why the request failed, present only when it did. On the request record
+   * itself rather than in a table of its own, so one investigation query
+   * returns the cause, the request and its writes together.
+   */
+  errorType: string | null;
+  errorMessage: string | null;
+  stackTrace: string | null;
+  errorContext: string | null;
 }
 
 export interface Page<T> {
@@ -81,6 +90,10 @@ export interface AuditTrailReader {
   search(filter: AuditTrailFilter): Promise<Page<AuditTrailEntry>>;
   /** The user-facing feed, restricted to `USER_RELEVANT_ENTITY_TYPES`. */
   findUserActivity(filter: UserActivityFilter): Promise<Page<AuditTrailEntry>>;
-  /** Resolves a RequestLog row by transactionId, correlationId, or errorId, plus every write it made, in order. */
+  /**
+   * Resolves a RequestLog row by transactionId, correlationId, or errorId —
+   * with the cause of its failure, when it failed — plus every write it made,
+   * in order.
+   */
   investigate(key: InvestigationKey): Promise<Investigation>;
 }

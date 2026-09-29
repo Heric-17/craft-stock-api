@@ -2,12 +2,14 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { Injectable } from '@nestjs/common';
 
+import type { RequestErrorDetails } from '../../domain/observability/error-details';
+
 export interface RequestContext {
   readonly correlationId: string;
   /**
    * Groups every write made during this request (and the RequestLog row for
    * the request itself) under one id. Not a Postgres transaction id — see
-   * CLAUDE.md §15.2.
+   * section 15.2 of the project notes.
    */
   readonly transactionId: string;
   /** Unset until the auth guard resolves a principal; stays unset on `@Public()` routes. */
@@ -24,6 +26,14 @@ export interface RequestContext {
    */
   route?: string;
   httpMethod?: string;
+  /**
+   * Set by the exception filter when a request fails, and read back by the
+   * middleware that writes the request record after the response has gone
+   * out. The filter is the one place that sees every failure, and it runs
+   * inside this context — which is what lets the failure reach the record
+   * without threading an error through the response object.
+   */
+  error?: RequestErrorDetails;
 }
 
 /**
@@ -70,10 +80,21 @@ export class RequestContextService {
     return this.storage.getStore()?.httpMethod;
   }
 
+  get error(): RequestErrorDetails | undefined {
+    return this.storage.getStore()?.error;
+  }
+
   setUserId(userId: string): void {
     const store = this.storage.getStore();
     if (store) {
       store.userId = userId;
+    }
+  }
+
+  setError(error: RequestErrorDetails): void {
+    const store = this.storage.getStore();
+    if (store) {
+      store.error = error;
     }
   }
 

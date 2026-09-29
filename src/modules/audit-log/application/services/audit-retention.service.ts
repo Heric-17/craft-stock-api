@@ -20,6 +20,10 @@ export interface RetentionResult {
  * exactly the kind of periodic task that policy calls for. `pruneOlderThan`
  * is the actual logic, independently testable without touching the clock;
  * `handleCron` is just its daily trigger.
+ *
+ * Pruning `RequestLog` prunes the failure details with it: the cause of an
+ * error lives on the request row itself, so it needs no window and no job of
+ * its own.
  */
 @Injectable()
 export class AuditRetentionService {

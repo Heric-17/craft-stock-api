@@ -16,6 +16,7 @@ import { UsersModule } from './modules/users/users.module';
 import { AllExceptionsFilter } from './shared/presentation/filters/all-exceptions.filter';
 import { RequestContextMiddleware } from './shared/presentation/middleware/request-context.middleware';
 import { LoggingModule } from './shared/infrastructure/logging/logging.module';
+import { NotificationsModule } from './shared/infrastructure/notifications/notifications.module';
 import { PrismaModule } from './shared/infrastructure/prisma/prisma.module';
 import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-work.module';
 
@@ -24,6 +25,9 @@ import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-wo
     EnvModule,
     ScheduleModule.forRoot(),
     LoggingModule,
+    // Operational alerting: what the global exception filter raises an
+    // unhandled failure through.
+    NotificationsModule,
     PrismaModule,
     UnitOfWorkModule,
     AuthModule,

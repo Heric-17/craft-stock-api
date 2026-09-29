@@ -25,6 +25,10 @@ describe('validateEnv', () => {
       UPLOADS_DIR: './uploads',
       S3_REGION: 'us-east-1',
       MAX_IMAGE_UPLOAD_SIZE_BYTES: 5 * 1024 * 1024,
+      NOTIFICATION_SENDER: 'CONSOLE',
+      ERROR_ALERT_THROTTLE_SECONDS: 300,
+      SMTP_PORT: 587,
+      SMTP_SECURE: false,
     });
   });
 
@@ -36,6 +40,55 @@ describe('validateEnv', () => {
     });
 
     expect(env.PORT).toBe(8080);
+  });
+
+  /**
+   * Alerting that only discovers it is misconfigured at the moment it needs to
+   * alert is not alerting at all — hence at startup, not on first use.
+   */
+  it('requires the SMTP settings only when SMTP is the selected channel', () => {
+    expect(() =>
+      validateEnv({
+        DATABASE_URL: VALID_DATABASE_URL,
+        JWT_SECRET: VALID_JWT_SECRET,
+        NOTIFICATION_SENDER: 'SMTP',
+      }),
+    ).toThrow(/SMTP_HOST/);
+  });
+
+  it('accepts SMTP once host, sender and recipient are given', () => {
+    const env = validateEnv({
+      DATABASE_URL: VALID_DATABASE_URL,
+      JWT_SECRET: VALID_JWT_SECRET,
+      NOTIFICATION_SENDER: 'SMTP',
+      SMTP_HOST: 'smtp.example.com',
+      ALERT_EMAIL_FROM: 'alerts@example.com',
+      ALERT_EMAIL_TO: 'dev@example.com',
+    });
+
+    expect(env.NOTIFICATION_SENDER).toBe('SMTP');
+    expect(env.SMTP_PORT).toBe(587);
+  });
+
+  /** `Boolean('false')` is true, which is the whole reason this is not coerced. */
+  it('reads SMTP_SECURE=false as false', () => {
+    const env = validateEnv({
+      DATABASE_URL: VALID_DATABASE_URL,
+      JWT_SECRET: VALID_JWT_SECRET,
+      SMTP_SECURE: 'false',
+    });
+
+    expect(env.SMTP_SECURE).toBe(false);
+  });
+
+  it('reads SMTP_SECURE=true as true', () => {
+    const env = validateEnv({
+      DATABASE_URL: VALID_DATABASE_URL,
+      JWT_SECRET: VALID_JWT_SECRET,
+      SMTP_SECURE: 'true',
+    });
+
+    expect(env.SMTP_SECURE).toBe(true);
   });
 
   it('fails when a required variable is missing', () => {

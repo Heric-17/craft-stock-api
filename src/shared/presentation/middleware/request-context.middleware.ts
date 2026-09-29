@@ -7,7 +7,10 @@ import {
   REQUEST_LOG_WRITER,
   type RequestLogWriter,
 } from '../../domain/observability/request-log-writer.port';
-import { RequestContextService } from '../../infrastructure/logging/request-context.service';
+import {
+  RequestContextService,
+  type RequestContext,
+} from '../../infrastructure/logging/request-context.service';
 import { StructuredLogger } from '../../infrastructure/logging/structured-logger.service';
 
 export const CORRELATION_ID_HEADER = 'x-correlation-id';
@@ -29,6 +32,11 @@ const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * `res` rather than back out of `RequestContextService` — plain closures,
  * unaffected by whether `AsyncLocalStorage` context still resolves by the
  * time the `finish` event fires.
+ *
+ * The failure details are read the same way: the context object is created
+ * here and captured by the closure, so the row picks up whatever the
+ * exception filter wrote onto it without depending on the store still
+ * resolving once the response has been flushed.
  */
 @Injectable()
 export class RequestContextMiddleware implements NestMiddleware {
@@ -43,6 +51,7 @@ export class RequestContextMiddleware implements NestMiddleware {
     const correlationId =
       typeof inbound === 'string' && inbound.trim().length > 0 ? inbound.trim() : randomUUID();
     const transactionId = randomUUID();
+    const context: RequestContext = { correlationId, transactionId };
 
     res.setHeader(CORRELATION_ID_HEADER, correlationId);
 
@@ -50,11 +59,11 @@ export class RequestContextMiddleware implements NestMiddleware {
       const startedAt = Date.now();
 
       res.on('finish', () => {
-        void this.writeRequestLog(req, res, { transactionId, correlationId, startedAt });
+        void this.writeRequestLog(req, res, { context, startedAt });
       });
     }
 
-    this.requestContext.run({ correlationId, transactionId }, () => {
+    this.requestContext.run(context, () => {
       next();
     });
   }
@@ -62,27 +71,30 @@ export class RequestContextMiddleware implements NestMiddleware {
   private async writeRequestLog(
     req: Request,
     res: Response,
-    meta: { transactionId: string; correlationId: string; startedAt: number },
+    meta: { context: RequestContext; startedAt: number },
   ): Promise<void> {
+    const { correlationId, transactionId } = meta.context;
     const statusCode = res.statusCode;
-    const errorId = statusCode >= SERVER_ERROR_FLOOR ? meta.correlationId : null;
+    const errorId = statusCode >= SERVER_ERROR_FLOOR ? correlationId : null;
 
     try {
       await this.requestLogWriter.write({
-        transactionId: meta.transactionId,
+        transactionId,
         route: routePath(req),
         httpMethod: req.method,
         userId: req.user?.id ?? null,
-        correlationId: meta.correlationId,
+        correlationId,
         statusCode,
         durationMs: Date.now() - meta.startedAt,
         errorId,
+        error: meta.context.error ?? null,
       });
     } catch (error) {
       // The response has already been sent — there is nothing left to fail.
-      // Visibility only, same as an ErrorLog write failure would get.
+      // Visibility only: a failure record that cannot be written is still
+      // reported, in the log, which is the primary sink either way.
       this.logger.error(
-        `Failed to write RequestLog for transaction ${meta.transactionId}`,
+        `Failed to write RequestLog for transaction ${transactionId}`,
         error instanceof Error ? error.stack : undefined,
         RequestContextMiddleware.name,
       );
