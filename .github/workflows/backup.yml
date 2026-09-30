@@ -27,7 +27,7 @@ env:
   # provider) rather than to its exact version. Bump it when the server is
   # upgraded past it — a mismatch fails the dump step with an explicit message
   # from pg_dump itself.
-  PG_CLIENT_MAJOR_VERSION: '17'
+  PG_CLIENT_MAJOR_VERSION: '18'
   # Read twice below: by the upload, and by the run summary that tells whoever
   # opens the run how long the archive will still be there.
   ARTIFACT_RETENTION_DAYS: '30'
