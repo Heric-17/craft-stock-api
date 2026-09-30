@@ -36,9 +36,9 @@ arquivo em um banco vazio devolve a instalação inteira do ponto de vista da ap
 
 **O arquivo de cópia é dado sensível.** Ele contém hash de senha e refresh token de
 todos os usuários. Trate-o com o mesmo cuidado do `.env`: nunca versionado, nunca
-anexado a ticket, nunca em pasta compartilhada aberta. `backups/` está no `.gitignore`. A cópia gerada pelo agendamento fica em artefato do
-GitHub Actions, que herda a visibilidade do repositório — a ressalva está registrada na
-seção do agendamento.
+anexado a ticket, nunca em pasta compartilhada aberta. `backups/` está no `.gitignore`. A cópia gerada pelo agendamento vai cifrada para o
+artefato do GitHub Actions, justamente porque o artefato herda a visibilidade do
+repositório, que é público — ver a seção do agendamento.
 
 ---
 
@@ -104,8 +104,9 @@ Workflow: [.github/workflows/backup.yml](../.github/workflows/backup.yml)
 | Horário | **03:00 em Porto Alegre** = **06:00 UTC** (`cron: '0 6 * * *'`) |
 | Gatilho manual | `workflow_dispatch`, na aba **Actions** do repositório |
 | Origem | `DATABASE_URL`, secret do repositório |
-| Cliente PostgreSQL | instalado no runner a partir do repositório apt do próprio PostgreSQL, major fixado em `17` |
-| Destino | artefato da própria execução |
+| Cliente PostgreSQL | instalado no runner a partir do repositório apt do próprio PostgreSQL, major fixado em `18` (servidor observado: 18.6) |
+| Cifragem | `gpg` simétrico AES-256, chave no secret `BACKUP_ENCRYPTION_KEY` |
+| Destino | artefato da própria execução, **somente o arquivo cifrado** |
 | Retenção do artefato | 30 dias |
 
 **Por que no GitHub Actions.** O banco está na Neon e a aplicação na Render; não existe
@@ -120,16 +121,17 @@ expressão `'0 6 * * *'` lê-se como 06:00 e dispara às 03:00 em Porto Alegre, 
 fuso é UTC-3 durante todo o ano (o Brasil encerrou o horário de verão em 2019). Mudar o
 horário local significa mudar a expressão no workflow **e** esta tabela.
 
-**Credenciais.** `DATABASE_URL` vem exclusivamente de secret do repositório, nunca de
-arquivo versionado e nunca do código:
+**Credenciais.** São dois secrets do repositório, nunca arquivo versionado, nunca código:
 
 ```bash
-gh secret set DATABASE_URL          # cola a URL de conexão da Neon quando perguntar
+gh secret set DATABASE_URL              # URL de conexão da Neon
+gh secret set BACKUP_ENCRYPTION_KEY     # chave de cifragem (ver adiante)
 ```
 
 Equivale a **Settings > Secrets and variables > Actions > New repository secret**. O
-workflow falha com mensagem explícita quando o secret não existe, em vez de tentar
-conectar sem credencial. A conexão sai do runner com `PGSSLMODE=require`: ela atravessa
+workflow confere os dois **antes de qualquer outro passo** e falha com mensagem explícita
+quando falta algum: descobrir a ausência da chave depois do dump significaria ter um
+arquivo em claro no runner, que é exatamente o que nunca pode subir. A conexão sai do runner com `PGSSLMODE=require`: ela atravessa
 a internet pública, e os scripts descartam a query string da URL ao parseá-la — um
 `sslmode` escrito lá seria perdido.
 
@@ -153,6 +155,39 @@ exatamente nesse caso. A reativação é o disparo manual pelo `workflow_dispatc
 isso que ele existe aqui, e não só por conveniência. Ao voltar a mexer no repositório,
 confira em **Actions** se o agendamento está ativo.
 
+### Cifragem do arquivo
+
+O `.dump` em claro **nunca sai do runner**. Entre o dump e o upload, o workflow cifra o
+arquivo com `gpg` simétrico, AES-256, e apaga o original; o que vira artefato é só o
+`.gpg`. A chave vem do secret `BACKUP_ENCRYPTION_KEY` e chega ao `gpg` por descritor de
+arquivo (`--passphrase-fd 0`, alimentado por um pipe), nunca como argumento — argumento
+aparece na lista de processos e no eco do comando que o runner escreve no log.
+
+É isto que torna um repositório público um destino defensável: o artefato continua
+baixável por qualquer pessoa, e **é inútil sem a chave**.
+
+```bash
+openssl rand -base64 48              # gera a chave; copie o valor
+gh secret set BACKUP_ENCRYPTION_KEY  # cole quando ele perguntar
+```
+
+Não encadeie os dois com pipe: a chave que ninguém viu é a chave que ninguém guardou.
+Cadastre pela pergunta interativa, e não a partir de arquivo — uma quebra de linha no fim
+do valor entra na chave, e aí a decifragem digitada à mão não bate com o que o workflow
+usou.
+
+**Guarde a chave fora do GitHub, num gerenciador de senhas.** O secret não é legível
+depois de gravado — nem pela API, nem pela interface — então o GitHub não serve de cópia
+dela.
+
+> **Perder a chave equivale a perder todas as cópias cifradas.** Não existe recuperação,
+> nem por você, nem pelo GitHub, nem por força bruta. O risco de hoje é o inverso do de
+> antes: antes era alguém conseguir ler o backup; agora é você não conseguir.
+
+Trocar a chave não decifra o passado: cada artefato fica preso à chave vigente quando foi
+gerado. Se a chave for trocada, os artefatos anteriores só abrem com a antiga, que precisa
+continuar guardada enquanto eles existirem.
+
 ### Destino: artefato da execução — decisão deliberada
 
 O arquivo fica no artefato da própria execução (`actions/upload-artifact`), com retenção
@@ -169,12 +204,18 @@ demonstração pontual, e não instalação em produção contínua. Migrar para
 de objetos externo é **troca de destino, não mudança de rotina**: o gatilho, a instalação
 do cliente e o dump seguem iguais, e só o passo final do workflow muda.
 
-**O artefato é dado sensível.** O dump contém hash de senha e refresh token de todos os
-usuários, e **o artefato herda a visibilidade do repositório**: quem consegue ler o
-repositório consegue baixar a cópia. Isso é tolerável com dados de desenvolvimento e de
-demonstração, e **precisa ser reavaliado antes de qualquer uso com dados reais de
-produção** — junto com cifragem em repouso e credencial de escrita sem permissão de
-apagar, que estão nas pendências ao final deste documento.
+**O que protege o artefato hoje.** O dump contém hash de senha e refresh token de todos
+os usuários, e o artefato herda a visibilidade do repositório, que é **público**: o
+arquivo é baixável por qualquer pessoa. A proteção em vigor é a cifragem descrita acima —
+sobe apenas o `.gpg`, e sem `BACKUP_ENCRYPTION_KEY` ele não abre. Não é ressalva
+pendente: é a medida aplicada.
+
+**A limitação que permanece** é o destino em si: a cópia fica hospedada no mesmo provedor
+do código, então uma única conta comprometida alcança o repositório e os artefatos. A
+cifragem reduz o dano — quem tomar a conta ainda não lê o conteúdo, a menos que tome
+também a chave — mas não muda o fato de o ovo e a cesta estarem no mesmo lugar. Falta
+também credencial de escrita sem permissão de apagar, que só existe com destino externo.
+Ambos estão nas pendências ao final deste documento.
 
 ### Baixar o artefato
 
@@ -201,22 +242,31 @@ estão descritas na seção [Restaurar](#restaurar), adiante.
 # 1. baixar (acima) — o arquivo cai em ./backups, que está no .gitignore
 gh run download <RUN_ID> --name craftstock-db-20260929-060014Z --dir ./backups
 
-# 2. conferir que o arquivo é legível antes de qualquer coisa
+# 2. decifrar — pede a chave; ela não vai para a linha de comando nem para o histórico
+gpg --output backups/craftstock-20260929-060014Z.dump \
+    --decrypt backups/craftstock-20260929-060014Z.dump.gpg
+
+# 3. conferir que o arquivo decifrado é legível antes de qualquer coisa
 pg_restore --list backups/craftstock-20260929-060014Z.dump > /dev/null && echo ok
 
-# 3. restaurar em banco limpo, sem encostar no banco de desenvolvimento
+# 4. restaurar em banco limpo, sem encostar no banco de desenvolvimento
 bash scripts/backup/db-restore.sh backups/craftstock-20260929-060014Z.dump \
   --database craftstock_restore_test
 
-# 4. conferir o histórico de migrations do banco restaurado
+# 5. conferir o histórico de migrations do banco restaurado
 DATABASE_URL="postgresql://craftstock:craftstock@localhost:5432/craftstock_restore_test?schema=public" \
   npx prisma migrate status
 ```
 
-No passo 3, compare a contagem de linhas impressa pelo script com a que o próprio
+O `gpg` pergunta a chave no terminal, então ela não vai para a linha de comando nem para
+o histórico do shell. Sem a chave certa ele para em `decryption failed: Bad session key`
+e nada é escrito.
+
+No passo 4, compare a contagem de linhas impressa pelo script com a que o próprio
 workflow imprimiu: ela está no log do passo **Dump database** da execução, e sobrevive
 enquanto o log da execução existir. Ao final, apague o banco de ensaio e o arquivo
-baixado — ele é dado sensível como qualquer outra cópia.
+baixado, **inclusive o `.dump` decifrado**, que é dado sensível em claro como qualquer
+outra cópia.
 
 Para **recuperação real** no banco gerenciado, e não ensaio, a diferença é apontar
 `DATABASE_URL` para ele e usar `--drop`, com a ressalva de que o `db-restore.sh` derruba
@@ -336,6 +386,16 @@ desenvolvimento. O que só o runner exerce — instalação do cliente por apt,
 `PG_CLIENT_MODE=local`, conexão com o banco gerenciado e upload do artefato — é o que a
 tabela abaixo cobre.
 
+Os dois primeiros disparos manuais, em 30/09/2026, já provaram parte disso: a instalação
+do cliente por apt e a conexão TLS com a Neon funcionaram, e a guarda de versão do
+`pg_dump` se mostrou no lugar ao recusar cliente 17.11 contra servidor 18.6 — daí o
+`PG_CLIENT_MAJOR_VERSION` fixado em `18`. O ciclo completo, com cifragem, decifragem e
+restauração, é o que falta.
+
+A cifragem em si foi exercitada localmente com o comando exato do workflow: o `.gpg` é
+gerado, o arquivo em claro é apagado, a decifragem devolve conteúdo idêntico byte a byte,
+e chave errada é recusada com `Bad session key`.
+
 **Data:** _a preencher_
 
 | Passo | Resultado |
@@ -343,10 +403,13 @@ tabela abaixo cobre.
 | Disparo manual (`gh workflow run backup.yml`) conclui com sucesso | _a preencher_ |
 | Versão do cliente no log do passo `Report client version`, contra a versão do servidor | _a preencher_ |
 | Artefato `craftstock-db-<carimbo>` presente na execução, com tamanho plausível | _a preencher_ |
-| Arquivo baixado restaura em banco limpo pelo `db-restore.sh` | _a preencher_ |
+| Artefato contém apenas o `.dump.gpg`, sem arquivo em claro | _a preencher_ |
+| `gpg --decrypt` com a chave do secret devolve o `.dump` | _a preencher_ |
+| Arquivo decifrado restaura em banco limpo pelo `db-restore.sh` | _a preencher_ |
 | Contagem de linhas do restaurado igual à impressa no log do passo `Dump database` | _a preencher_ |
 | `prisma migrate status` contra o banco restaurado | _a preencher_ |
 | Falha proposital (secret ausente ou URL inválida) derruba a execução e gera e-mail | _a preencher_ |
+| `gpg --decrypt` com chave errada é recusado | _a preencher_ |
 
 ---
 
@@ -377,12 +440,17 @@ A definir, quando houver produção real:
   problema dentro. Os 30 dias atuais são folga confortável para este projeto e curtos
   para um sistema em operação.
 
-### 2. Reavaliação do artefato antes de dados reais
+### 2. Custódia da chave de cifragem
 
-Enquanto o destino for o artefato da execução, a cópia herda a visibilidade do
-repositório e fica acessível a quem lê o código. Antes do primeiro uso com dados reais de
-usuários, isso precisa de decisão consciente: ou o destino muda, ou o repositório e o
-acesso a ele passam a ser tratados com o mesmo cuidado que os dados.
+A exposição do artefato em repositório público está resolvida pela cifragem, e essa parte
+saiu da lista. O que entrou no lugar é a gestão da chave, que hoje existe em dois lugares:
+o secret do repositório e onde você a guardou.
+
+A definir, quando houver produção real: onde a chave fica em custódia de forma que
+sobreviva à perda da sua máquina e continue acessível a mais de uma pessoa; com que
+frequência é trocada; e como os artefatos gerados com a chave antiga continuam abríveis
+depois da troca. Rotação de chave sem plano para o histórico transforma cópia válida em
+arquivo morto.
 
 ### 3. Ensaio periódico
 

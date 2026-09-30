@@ -154,8 +154,8 @@ dentro do container do compose (`PG_CLIENT_MODE`). No Windows, rode pelo Git Bas
 
 Em produção a cópia não é manual: o workflow
 [.github/workflows/backup.yml](.github/workflows/backup.yml) roda o mesmo `db-dump.sh`
-todo dia às 03:00 de Porto Alegre (06:00 UTC) e guarda o arquivo como artefato da
-execução, e também aceita disparo manual pela aba **Actions**.
+todo dia às 03:00 de Porto Alegre (06:00 UTC) e guarda o arquivo **cifrado** como
+artefato da execução, e também aceita disparo manual pela aba **Actions**.
 
 O procedimento completo, o agendamento, o que a cópia **não** cobre (imagens enviadas,
 `.env`) e o registro dos ciclos de dump e restauração estão em

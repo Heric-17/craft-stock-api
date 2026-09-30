@@ -23,8 +23,8 @@ permissions:
 env:
   # The client must never be older than the server: pg_dump refuses to dump a
   # newer server outright. The other direction is supported, so this is pinned
-  # to a major at or above the managed server's (16 or 17 on the current
-  # provider) rather than to its exact version. Bump it when the server is
+  # to a major at or above the managed server's — 18.6 on the provider as of
+  # 2026-09-30 — rather than to its exact version. Bump it when the server is
   # upgraded past it — a mismatch fails the dump step with an explicit message
   # from pg_dump itself.
   PG_CLIENT_MAJOR_VERSION: '18'
@@ -39,6 +39,27 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      # Both secrets are checked before anything else happens. Discovering a
+      # missing encryption key after the dump would mean a plaintext archive
+      # already exists on the runner, which is exactly the file that must never
+      # reach an artifact — and it would also mean dumping the whole database
+      # for nothing.
+      - name: Check configuration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          missing=0
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::The DATABASE_URL repository secret is not set; there is nothing to back up."
+            missing=1
+          fi
+          if [ -z "${BACKUP_ENCRYPTION_KEY}" ]; then
+            echo "::error::The BACKUP_ENCRYPTION_KEY repository secret is not set; an unencrypted dump must never be uploaded."
+            missing=1
+          fi
+          [ "$missing" -eq 0 ]
+
       # Only the scripts under scripts/backup/ are needed; a full checkout is
       # cheap enough that narrowing it would buy nothing.
       - name: Checkout
@@ -76,6 +97,7 @@ jobs:
           stamp="$(date -u +'%Y%m%d-%H%M%SZ')"
           echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
           echo "path=backups/craftstock-$stamp.dump" >> "$GITHUB_OUTPUT"
+          echo "encrypted=backups/craftstock-$stamp.dump.gpg" >> "$GITHUB_OUTPUT"
 
       # PG_CLIENT_MODE=local is required, not preference: left at auto, the
       # scripts fall back to the client inside the docker-compose container,
@@ -98,12 +120,35 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PG_CLIENT_MODE: local
           PGSSLMODE: require
+        run: bash scripts/backup/db-dump.sh --output '${{ steps.archive.outputs.path }}'
+
+      # Symmetric AES-256, key from the secret. The key reaches gpg through a
+      # file descriptor fed by a pipe (--passphrase-fd 0) and never as an
+      # argument: arguments show up in the process list and in the command echo
+      # the runner writes to the log. --pinentry-mode loopback is what makes gpg
+      # accept a passphrase from that descriptor instead of trying to open a
+      # terminal prompt that does not exist here.
+      #
+      # The plaintext dump is deleted immediately after. The runner is destroyed
+      # at the end of the job either way, but the upload step must have no
+      # readable archive left to pick up by mistake.
+      #
+      # This is what makes a public repository a defensible destination: the
+      # artifact stays downloadable by anyone, and is useless without the key.
+      - name: Encrypt archive
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
         run: |
-          if [ -z "${DATABASE_URL}" ]; then
-            echo "::error::The DATABASE_URL repository secret is not set; there is nothing to back up."
+          printf '%s' "$BACKUP_ENCRYPTION_KEY" | gpg --batch --quiet \
+            --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 \
+            --output '${{ steps.archive.outputs.encrypted }}' \
+            '${{ steps.archive.outputs.path }}'
+          rm -f '${{ steps.archive.outputs.path }}'
+          if [ ! -s '${{ steps.archive.outputs.encrypted }}' ]; then
+            echo "::error::gpg produced no output; there is nothing to upload."
             exit 1
           fi
-          bash scripts/backup/db-dump.sh --output '${{ steps.archive.outputs.path }}'
 
       # Destination: this workflow's own artifact store. DELIBERATE DECISION,
       # with two limitations known and accepted rather than overlooked —
@@ -114,22 +159,23 @@ jobs:
       # routine: only this step changes.
       #
       # The archive contains password hashes and refresh tokens, and an
-      # artifact inherits the repository's visibility — whoever can read the
-      # repository can download it. That has to be re-evaluated before this
-      # routine runs against real production data. Recorded in
-      # docs/RECOVERY.md as well.
+      # artifact inherits the repository's visibility — this repository is
+      # public, so anyone can download it. That is why only the gpg-encrypted
+      # file is uploaded, and why the step above deletes the plaintext one.
+      # What is left is a copy hosted by the same provider as the code, which
+      # is the limitation recorded in docs/RECOVERY.md.
       - name: Upload archive
         uses: actions/upload-artifact@v4
         with:
           name: craftstock-db-${{ steps.archive.outputs.stamp }}
-          path: ${{ steps.archive.outputs.path }}
+          path: ${{ steps.archive.outputs.encrypted }}
           retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
-          # A missing file here would mean the dump step reported success
+          # A missing file here would mean an earlier step reported success
           # without producing anything. Fail rather than upload nothing and
           # leave an empty artifact looking like a backup.
           if-no-files-found: error
-          # pg_dump already compressed the archive at level 9. Zipping it again
-          # costs time and saves nothing.
+          # pg_dump already compressed the archive at level 9, and ciphertext
+          # does not compress. Zipping it again costs time and saves nothing.
           compression-level: 0
 
       # The row counts printed by the dump step are the reference for checking
@@ -137,12 +183,13 @@ jobs:
       # was produced and for how long it will be downloadable.
       - name: Summarize
         run: |
-          archive='${{ steps.archive.outputs.path }}'
+          archive='${{ steps.archive.outputs.encrypted }}'
           {
             printf '### Database backup\n\n'
             printf -- '- Archive: `%s`\n' "$(basename "$archive")"
             printf -- '- Size: %s\n' "$(du -h "$archive" | cut -f1)"
             printf -- '- Artifact: `craftstock-db-%s`, kept for %s days\n' \
               '${{ steps.archive.outputs.stamp }}' "$ARTIFACT_RETENTION_DAYS"
+            printf -- '- Encryption: gpg symmetric AES-256; decrypting needs BACKUP_ENCRYPTION_KEY.\n'
             printf -- '- Row counts per table are in the log of the dump step.\n'
           } >> "$GITHUB_STEP_SUMMARY"
