@@ -36,7 +36,9 @@ arquivo em um banco vazio devolve a instalação inteira do ponto de vista da ap
 
 **O arquivo de cópia é dado sensível.** Ele contém hash de senha e refresh token de
 todos os usuários. Trate-o com o mesmo cuidado do `.env`: nunca versionado, nunca
-anexado a ticket, nunca em pasta compartilhada aberta. `backups/` está no `.gitignore`.
+anexado a ticket, nunca em pasta compartilhada aberta. `backups/` está no `.gitignore`. A cópia gerada pelo agendamento fica em artefato do
+GitHub Actions, que herda a visibilidade do repositório — a ressalva está registrada na
+seção do agendamento.
 
 ---
 
@@ -92,6 +94,138 @@ essa saída**: é com ela que a restauração é conferida.
 
 ---
 
+## Agendamento automático (GitHub Actions)
+
+Workflow: [.github/workflows/backup.yml](../.github/workflows/backup.yml)
+
+| Item | Valor |
+| --- | --- |
+| Periodicidade | diária |
+| Horário | **03:00 em Porto Alegre** = **06:00 UTC** (`cron: '0 6 * * *'`) |
+| Gatilho manual | `workflow_dispatch`, na aba **Actions** do repositório |
+| Origem | `DATABASE_URL`, secret do repositório |
+| Cliente PostgreSQL | instalado no runner a partir do repositório apt do próprio PostgreSQL, major fixado em `17` |
+| Destino | artefato da própria execução |
+| Retenção do artefato | 30 dias |
+
+**Por que no GitHub Actions.** O banco está na Neon e a aplicação na Render; não existe
+VPS onde pendurar um cron de sistema operacional. O Actions fornece as duas coisas que
+faltavam: a máquina temporária que roda o dump e o gatilho de horário. A alternativa
+registrada antes — disparar de dentro do processo da aplicação, com o
+`@nestjs/schedule` que o canário e a poda já usam — continua descartada pela mesma
+razão: processo caído é dia sem cópia, justamente no dia em que ela importa.
+
+**O cron é sempre em UTC.** O Actions não conhece fuso local e não aplica nenhum. A
+expressão `'0 6 * * *'` lê-se como 06:00 e dispara às 03:00 em Porto Alegre, porque o
+fuso é UTC-3 durante todo o ano (o Brasil encerrou o horário de verão em 2019). Mudar o
+horário local significa mudar a expressão no workflow **e** esta tabela.
+
+**Credenciais.** `DATABASE_URL` vem exclusivamente de secret do repositório, nunca de
+arquivo versionado e nunca do código:
+
+```bash
+gh secret set DATABASE_URL          # cola a URL de conexão da Neon quando perguntar
+```
+
+Equivale a **Settings > Secrets and variables > Actions > New repository secret**. O
+workflow falha com mensagem explícita quando o secret não existe, em vez de tentar
+conectar sem credencial. A conexão sai do runner com `PGSSLMODE=require`: ela atravessa
+a internet pública, e os scripts descartam a query string da URL ao parseá-la — um
+`sslmode` escrito lá seria perdido.
+
+**`PG_CLIENT_MODE=local` é obrigatório aqui.** Em `auto`, os scripts caem para o cliente
+de dentro do container do compose, que não existe no runner. O workflow define a
+variável que os scripts já leem; nenhuma linha de script foi alterada para isto.
+
+**Falha visível.** O workflow não tem verificação própria de integridade: ele aproveita
+as que o `db-dump.sh` já faz — arquivo `.partial` renomeado só após saída limpa, recusa
+de dump vazio, e leitura do índice do arquivo para provar que não está truncado.
+Qualquer uma delas sai com status diferente de zero, o que derruba o passo e a execução.
+O upload ainda usa `if-no-files-found: error`, para que um dump que tenha "dado certo"
+sem produzir arquivo não gere artefato vazio com cara de cópia. O GitHub notifica por
+e-mail a falha de execução agendada, o que cobre o alerta sem ferramenta adicional:
+cópia que para de rodar em silêncio é pior que cópia nenhuma, porque cria falsa sensação
+de proteção.
+
+**Limitação dos 60 dias.** O GitHub desativa automaticamente workflows agendados após 60
+dias sem atividade no repositório. Um projeto que fica parado depois da entrega cai
+exatamente nesse caso. A reativação é o disparo manual pelo `workflow_dispatch` — é para
+isso que ele existe aqui, e não só por conveniência. Ao voltar a mexer no repositório,
+confira em **Actions** se o agendamento está ativo.
+
+### Destino: artefato da execução — decisão deliberada
+
+O arquivo fica no artefato da própria execução (`actions/upload-artifact`), com retenção
+declarada explicitamente no workflow. **É escolha consciente, com duas limitações
+conhecidas:**
+
+- **retenção limitada** — 30 dias, contra o artefato ser apagado pelo GitHub depois
+  disso. Não há cópia mensal nem anual;
+- **mesma casa do código** — a cópia fica hospedada no mesmo provedor do repositório,
+  então uma única conta comprometida alcança os dois.
+
+É destino adequado ao ciclo de vida deste projeto, que é trabalho acadêmico com
+demonstração pontual, e não instalação em produção contínua. Migrar para armazenamento
+de objetos externo é **troca de destino, não mudança de rotina**: o gatilho, a instalação
+do cliente e o dump seguem iguais, e só o passo final do workflow muda.
+
+**O artefato é dado sensível.** O dump contém hash de senha e refresh token de todos os
+usuários, e **o artefato herda a visibilidade do repositório**: quem consegue ler o
+repositório consegue baixar a cópia. Isso é tolerável com dados de desenvolvimento e de
+demonstração, e **precisa ser reavaliado antes de qualquer uso com dados reais de
+produção** — junto com cifragem em repouso e credencial de escrita sem permissão de
+apagar, que estão nas pendências ao final deste documento.
+
+### Baixar o artefato
+
+Pela interface: **Actions > Database backup >** a execução desejada **> Artifacts >**
+`craftstock-db-<AAAAMMDD-HHMMSSZ>`. O navegador baixa um `.zip` com o `.dump` dentro.
+
+Pela linha de comando, que já descompacta:
+
+```bash
+gh run list --workflow=backup.yml --limit 5
+gh run download <RUN_ID> --name craftstock-db-<AAAAMMDD-HHMMSSZ> --dir ./backups
+```
+
+O carimbo no nome é em **UTC**, e é o mesmo do arquivo — por isso execuções diferentes
+nunca se sobrepõem.
+
+### Restaurar a partir do artefato
+
+O passo a passo abaixo é o ensaio completo. As opções e as garantias do
+`db-restore.sh` — validação antes do `DROP`, transação única, confirmação digitada —
+estão descritas na seção [Restaurar](#restaurar), adiante.
+
+```bash
+# 1. baixar (acima) — o arquivo cai em ./backups, que está no .gitignore
+gh run download <RUN_ID> --name craftstock-db-20260929-060014Z --dir ./backups
+
+# 2. conferir que o arquivo é legível antes de qualquer coisa
+pg_restore --list backups/craftstock-20260929-060014Z.dump > /dev/null && echo ok
+
+# 3. restaurar em banco limpo, sem encostar no banco de desenvolvimento
+bash scripts/backup/db-restore.sh backups/craftstock-20260929-060014Z.dump \
+  --database craftstock_restore_test
+
+# 4. conferir o histórico de migrations do banco restaurado
+DATABASE_URL="postgresql://craftstock:craftstock@localhost:5432/craftstock_restore_test?schema=public" \
+  npx prisma migrate status
+```
+
+No passo 3, compare a contagem de linhas impressa pelo script com a que o próprio
+workflow imprimiu: ela está no log do passo **Dump database** da execução, e sobrevive
+enquanto o log da execução existir. Ao final, apague o banco de ensaio e o arquivo
+baixado — ele é dado sensível como qualquer outra cópia.
+
+Para **recuperação real** no banco gerenciado, e não ensaio, a diferença é apontar
+`DATABASE_URL` para ele e usar `--drop`, com a ressalva de que o `db-restore.sh` derruba
+e recria o banco conectando-se ao banco `postgres` do servidor; num provedor gerenciado,
+restaurar em um banco ou branch novo e só então apontar a aplicação é o caminho menos
+destrutivo. Esse caminho ainda não foi exercitado (ver a seção de verificação).
+
+---
+
 ## Restaurar
 
 ```bash
@@ -139,7 +273,10 @@ conferir isso: o schema já está aplicado, e o histórico veio dentro da cópia
 ## Verificação executada
 
 Procedimento de recuperação apenas descrito, e nunca executado, não é garantia de
-continuidade: é suposição. O ciclo completo foi executado.
+continuidade: é suposição. O ciclo local completo foi executado; o disparo pelo GitHub
+Actions ainda não.
+
+### Ciclo local (dump e restauração na máquina)
 
 **Data:** 28/09/2026
 
@@ -176,46 +313,80 @@ banco de desenvolvimento: a origem é lida, nunca escrita.
 **Reexecutar este ciclo é obrigatório** sempre que mudar a versão do PostgreSQL, a forma
 de rodar o banco, ou um dos dois scripts.
 
+### Ciclo pelo GitHub Actions
+
+**Status: pendente de execução.** O workflow está escrito e o YAML válido, mas o disparo
+manual depende de dois passos que exigem a conta do repositório e a credencial do banco
+gerenciado, nenhum dos dois disponível de dentro deste repositório:
+
+1. o secret `DATABASE_URL` precisa existir (`gh secret set DATABASE_URL`, com a URL de
+   conexão da Neon);
+2. o `backup.yml` precisa estar no branch padrão — `workflow_dispatch` só é oferecido
+   para workflows presentes em `master`.
+
+Feito isso, o ciclo a executar e registrar aqui, com data, é o abaixo. **Enquanto esta
+tabela estiver em branco, o agendamento está implementado e não verificado**, e a
+distinção é a mesma que motivou o ciclo local: procedimento descrito e nunca executado é
+suposição, não garantia.
+
+Verificado localmente, até onde é possível sem o secret: o YAML é válido, o passo de dump
+falha com mensagem explícita quando `DATABASE_URL` está vazio, e a chamada do
+`db-dump.sh` com `--output` gera arquivo íntegro (292 KB, 86 entradas) contra o banco de
+desenvolvimento. O que só o runner exerce — instalação do cliente por apt,
+`PG_CLIENT_MODE=local`, conexão com o banco gerenciado e upload do artefato — é o que a
+tabela abaixo cobre.
+
+**Data:** _a preencher_
+
+| Passo | Resultado |
+| --- | --- |
+| Disparo manual (`gh workflow run backup.yml`) conclui com sucesso | _a preencher_ |
+| Versão do cliente no log do passo `Report client version`, contra a versão do servidor | _a preencher_ |
+| Artefato `craftstock-db-<carimbo>` presente na execução, com tamanho plausível | _a preencher_ |
+| Arquivo baixado restaura em banco limpo pelo `db-restore.sh` | _a preencher_ |
+| Contagem de linhas do restaurado igual à impressa no log do passo `Dump database` | _a preencher_ |
+| `prisma migrate status` contra o banco restaurado | _a preencher_ |
+| Falha proposital (secret ausente ou URL inválida) derruba a execução e gera e-mail | _a preencher_ |
+
 ---
 
 ## Fora do escopo desta etapa
 
-Quatro decisões que só fazem sentido quando existir servidor de produção. Estão aqui
-como pendência explícita, não como esquecimento.
+O agendamento saiu desta lista: está implementado, e a seção
+[Agendamento automático](#agendamento-automático-github-actions) diz o que ele cobre. As
+três decisões abaixo continuam abertas, e só fazem sentido quando existir uso em produção
+real. Estão aqui como pendência explícita, não como esquecimento.
 
-### 1. Agendamento
+### 1. Destino remoto fora do GitHub e retenção de longo prazo
 
-Hoje a cópia é manual. A aplicação já tem `@nestjs/schedule` no processo, usado pelo
-canário da NFC-e e pela poda de `AuditLog`/`RequestLog` — mas cópia de segurança
-disparada de dentro do processo que ela protege é frágil: se o processo estiver caído,
-não há cópia justamente no dia em que ela importa.
+Pendência **reduzida, não resolvida**. Hoje há rotina diária e cópia guardada fora do
+disco do banco, mas no mesmo provedor do código e por 30 dias.
 
-A definir: cron do sistema operacional ou serviço gerenciado do provedor; frequência
-(diária é o piso razoável para um sistema com entrada de notas fiscais); janela de
-execução; e como a falha do agendamento é notificada — o `NotificationSender` já existe
-e é o caminho natural.
+A definir, quando houver produção real:
 
-### 2. Destino remoto
+- **o destino** — bucket de objetos é o candidato óbvio, já que o projeto usa S3 para
+  imagens em produção; muda apenas o passo final do workflow;
+- **credencial de escrita separada** da credencial da aplicação, de preferência sem
+  permissão de apagar, para que um comprometimento da aplicação não alcance as cópias;
+- **cifragem em repouso**, porque o arquivo contém hash de senha e refresh token;
+- **as janelas de retenção** — quantas cópias diárias, semanais e mensais manter, e quem
+  apaga as vencidas. O projeto já tem retenção configurável para `AuditLog` e
+  `RequestLog` (`AUDIT_LOG_RETENTION_DAYS`, `REQUEST_LOG_RETENTION_DAYS`); a das cópias
+  precisa da mesma decisão, com um detalhe a mais: a janela tem que ser maior que o tempo
+  que se leva para perceber um problema, senão a única cópia sobrevivente já vem com o
+  problema dentro. Os 30 dias atuais são folga confortável para este projeto e curtos
+  para um sistema em operação.
 
-Cópia guardada no mesmo disco do banco não protege contra perda do disco, que é
-exatamente o cenário que motiva a cópia.
+### 2. Reavaliação do artefato antes de dados reais
 
-A definir: o destino (bucket de objetos é o candidato óbvio, já que o projeto usa S3
-para imagens em produção); credenciais de escrita separadas das da aplicação, de
-preferência sem permissão de apagar; e cifragem em repouso — o arquivo contém hash de
-senha e refresh token.
+Enquanto o destino for o artefato da execução, a cópia herda a visibilidade do
+repositório e fica acessível a quem lê o código. Antes do primeiro uso com dados reais de
+usuários, isso precisa de decisão consciente: ou o destino muda, ou o repositório e o
+acesso a ele passam a ser tratados com o mesmo cuidado que os dados.
 
-### 3. Retenção
+### 3. Ensaio periódico
 
-A definir: quantas cópias diárias, semanais e mensais manter, e quem apaga as vencidas.
-O projeto já tem retenção configurável para `AuditLog` e `RequestLog`
-(`AUDIT_LOG_RETENTION_DAYS`, `REQUEST_LOG_RETENTION_DAYS`); a das cópias precisa da
-mesma decisão, com um detalhe a mais: a janela de retenção tem que ser maior que o tempo
-que se leva para perceber um problema, senão a única cópia sobrevivente já vem com o
-problema dentro.
-
-### 4. Ensaio periódico
-
-Restauração que ninguém executa não está verificada. A definir: com que frequência o
-ciclo acima é repetido em produção, contra qual ambiente, e onde o resultado fica
-registrado.
+Restauração que ninguém executa não está verificada. O ciclo local já foi executado uma
+vez, e o ciclo pelo Actions está pendente. A definir: com que frequência o ciclo é
+repetido depois disso, contra qual ambiente, e onde o resultado fica registrado — este
+documento é o lugar natural.

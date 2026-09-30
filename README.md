@@ -152,8 +152,13 @@ bash scripts/backup/db-restore.sh backups/<arquivo>.dump --drop # restaura
 Não é preciso ter `pg_dump` instalado: por padrão os scripts usam o cliente que já vem
 dentro do container do compose (`PG_CLIENT_MODE`). No Windows, rode pelo Git Bash.
 
-O procedimento completo, o que a cópia **não** cobre (imagens enviadas, `.env`) e o
-registro do ciclo de dump e restauração já executado estão em
+Em produção a cópia não é manual: o workflow
+[.github/workflows/backup.yml](.github/workflows/backup.yml) roda o mesmo `db-dump.sh`
+todo dia às 03:00 de Porto Alegre (06:00 UTC) e guarda o arquivo como artefato da
+execução, e também aceita disparo manual pela aba **Actions**.
+
+O procedimento completo, o agendamento, o que a cópia **não** cobre (imagens enviadas,
+`.env`) e o registro dos ciclos de dump e restauração estão em
 [docs/RECOVERY.md](docs/RECOVERY.md).
 
 ## Dependências fixadas por override
