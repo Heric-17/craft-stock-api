@@ -80,6 +80,7 @@ Para mudar as credenciais do seed, defina `SEED_USER_EMAIL`, `SEED_USER_PASSWORD
 | `npm run prisma:validate` | Valida `prisma/schema.prisma` |
 | `npm run prisma:generate` | Regera o Prisma Client |
 | `npm run prisma:migrate` | Cria/aplica migration de desenvolvimento (e roda o seed) |
+| `npm run prisma:deploy` | Aplica as migrations já versionadas, sem criar nenhuma (CI e produção) |
 | `npm run prisma:seed` | Roda só o seed, sem mexer em migrations |
 
 ## Ambiente
@@ -98,6 +99,8 @@ inicialização.
 ## Estrutura
 
 ```
+docs/RECOVERY.md                cópia de segurança e restauração do banco
+scripts/backup/                scripts de dump e restore do PostgreSQL
 prisma.config.ts                configuração do CLI do Prisma (inclui DATABASE_URL e o seed)
 prisma/schema.prisma            datasource, generator e os models
 prisma/seed.ts                  cria o usuário padrão; roda após `migrate dev`/`reset`
@@ -135,6 +138,23 @@ Uma consequência do adapter merece atenção: o driver `pg` abre conexão sob d
 anunciando uma conexão que não existe. Pelo mesmo motivo o healthcheck do
 `docker-compose.yml` executa uma query em vez de `pg_isready`, que reporta *healthy*
 mesmo quando o role ou o banco não existem.
+
+## Cópia de segurança
+
+Dois scripts versionados, sem credencial nenhuma dentro deles — ambos leem
+`DATABASE_URL`:
+
+```bash
+bash scripts/backup/db-dump.sh                                  # gera ./backups/<banco>-<data>.dump
+bash scripts/backup/db-restore.sh backups/<arquivo>.dump --drop # restaura
+```
+
+Não é preciso ter `pg_dump` instalado: por padrão os scripts usam o cliente que já vem
+dentro do container do compose (`PG_CLIENT_MODE`). No Windows, rode pelo Git Bash.
+
+O procedimento completo, o que a cópia **não** cobre (imagens enviadas, `.env`) e o
+registro do ciclo de dump e restauração já executado estão em
+[docs/RECOVERY.md](docs/RECOVERY.md).
 
 ## Dependências fixadas por override
 

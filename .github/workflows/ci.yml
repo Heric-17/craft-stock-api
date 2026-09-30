@@ -12,6 +12,13 @@ env:
   NODE_ENV: test
   LOG_LEVEL: error
   DATABASE_URL: postgresql://craftstock:craftstock@localhost:5432/craftstock_test?schema=public
+  # The env schema is validated when EnvModule is imported, so even the
+  # module-wiring tests need a valid environment just to load the file. Every
+  # other variable has a default; this one deliberately does not, and there is
+  # no .env here — it is not committed. A throwaway value: the runner is
+  # destroyed with the job, and no installation's real key may ever be written
+  # down in this file.
+  JWT_SECRET: ci-only-throwaway-signing-key-not-a-secret
 
 jobs:
   ci:
@@ -62,6 +69,15 @@ jobs:
 
       - name: Unit tests
         run: npm run test
+
+      # The service container starts with an empty database, and nothing in the
+      # e2e suite creates the schema: the specs drive real HTTP routes against
+      # real tables. `deploy` rather than `dev` — it applies the committed
+      # migrations and never generates one, so CI cannot quietly drift from
+      # prisma/migrations. The seed is not needed: each spec creates and deletes
+      # the rows it uses, including its own user.
+      - name: Apply migrations
+        run: npm run prisma:deploy
 
       - name: E2E tests
         run: npm run test:e2e

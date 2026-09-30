@@ -14,6 +14,9 @@
 # local image storage (STORAGE_PROVIDER=LOCAL_DISK)
 /uploads
 
+# database dumps written by scripts/backup/db-dump.sh
+/backups
+
 # env
 .env
 .env.local
