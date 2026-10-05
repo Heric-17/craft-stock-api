@@ -25,8 +25,9 @@ const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * mutating requests, writes the `RequestLog` row once the response finishes
  * — §15.2: a route that touched nothing is itself an investigation fact, and
  * a request that fails mid-transaction still needs a record that it
- * happened, so this write is outside any business transaction (same
- * reasoning as `ErrorLog`, §15.1).
+ * happened, so this write is outside any business transaction — which is
+ * also what lets the failure details on the row survive the rollback of the
+ * very request they describe (§15.1).
  *
  * Route/method/userId for the `RequestLog` row are read directly off `req`/
  * `res` rather than back out of `RequestContextService` — plain closures,

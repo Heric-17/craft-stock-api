@@ -52,7 +52,19 @@ export class AuditRetentionService {
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async handleCron(): Promise<void> {
-    await this.pruneOlderThan();
+    try {
+      await this.pruneOlderThan();
+    } catch (error) {
+      // A scheduled job has nobody to hand an exception to, and one that
+      // escapes here leaves through the process's unhandled rejection path.
+      // A window that failed to be pruned is tomorrow's run's problem; the
+      // process staying up is today's.
+      this.logger.error(
+        'The audit retention run failed.',
+        error instanceof Error ? error.stack : undefined,
+        AuditRetentionService.name,
+      );
+    }
   }
 }
 

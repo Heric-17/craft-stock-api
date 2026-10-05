@@ -41,15 +41,16 @@ function envService(overrides: Partial<Env> = {}): EnvService {
 class FakePruner implements AuditRetentionPruner {
   auditLogCalls: Date[] = [];
   requestLogCalls: Date[] = [];
+  failure?: Error;
 
   pruneAuditLog(olderThan: Date): Promise<number> {
     this.auditLogCalls.push(olderThan);
-    return Promise.resolve(3);
+    return this.failure ? Promise.reject(this.failure) : Promise.resolve(3);
   }
 
   pruneRequestLog(olderThan: Date): Promise<number> {
     this.requestLogCalls.push(olderThan);
-    return Promise.resolve(7);
+    return this.failure ? Promise.reject(this.failure) : Promise.resolve(7);
   }
 }
 
@@ -94,6 +95,22 @@ describe('AuditRetentionService', () => {
 
     expect(daysBetween(now, pruner.auditLogCalls[0])).toBe(10);
     expect(daysBetween(now, pruner.requestLogCalls[0])).toBe(2);
+  });
+
+  it('never lets the scheduled run reject', async () => {
+    const pruner = new FakePruner();
+    pruner.failure = new Error('connection terminated unexpectedly');
+    const logger = buildLogger();
+    jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const service = new AuditRetentionService(pruner, envService(), logger);
+
+    await expect(service.handleCron()).resolves.toBeUndefined();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('audit retention run failed'),
+      expect.anything(),
+      'AuditRetentionService',
+    );
   });
 
   it('defaults to the current time when no "now" is given', async () => {

@@ -10,24 +10,18 @@ Gestão de estoque fracionado, precificação e projeção de capacidade de prod
 ## Começando
 
 ```bash
-cp .env.example .env      # PRIMEIRO passo: o npm install depende dele
+cp .env.example .env      # antes do install: o postinstall roda `prisma generate`,
+                          # que precisa de DATABASE_URL
 docker compose up -d      # sobe o PostgreSQL com volume persistente
 npm install                 # instala e roda `prisma generate`
 npm run prisma:migrate      # aplica as migrations e semeia o usuário padrão
 npm run start:dev
 ```
 
-> O `cp` vem antes do `npm install` de propósito. O `postinstall` roda
-> `prisma generate`, que carrega o `prisma.config.ts`, que resolve
-> `env("DATABASE_URL")`. Sem `.env`, a instalação falha — de forma explícita, que é
-> o comportamento que este projeto quer.
+Rodar `prisma:migrate` de novo não duplica o usuário semeado. Para só semear, sem tocar
+migrations: `npm run prisma:seed`.
 
-`prisma migrate dev` roda o seed (`prisma/seed.ts`) automaticamente depois de aplicar as
-migrations — é o que cria o primeiro usuário. Rodar de novo não duplica nada: o seed só
-cria a conta se o e-mail ainda não existir. Para semear sem mexer nas migrations, `npm run
-prisma:seed`.
-
-A API sobe em `http://localhost:3000`. Verificação rápida:
+A API sobe em `http://localhost:3000`:
 
 ```bash
 curl -i http://localhost:3000/health
@@ -35,19 +29,14 @@ curl -i http://localhost:3000/health
 
 ## Autenticação
 
-Toda rota é protegida por padrão — as únicas exceções são `POST /auth/login`,
-`POST /auth/refresh`, `POST /auth/logout` e `GET /health`. Não existe cadastro público:
-como não há papéis neste sistema, qualquer usuário autenticado pode criar outro
-(`POST /users`), e a primeira conta de uma instalação nova vem do seed, não da API.
-
-O seed cria, por padrão:
+Toda rota é protegida por padrão, exceto `POST /auth/login`, `POST /auth/refresh`,
+`POST /auth/logout` e `GET /health`. Não há cadastro público: qualquer usuário
+autenticado cria outro (`POST /users`); a primeira conta vem do seed.
 
 | Campo | Valor |
 | --- | --- |
 | E-mail | `admin@craftstock.dev` |
 | Senha | `senha-forte-123` |
-
-Login:
 
 ```bash
 curl -X POST http://localhost:3000/auth/login \
@@ -55,15 +44,15 @@ curl -X POST http://localhost:3000/auth/login \
   -d '{"email":"admin@craftstock.dev","password":"senha-forte-123"}'
 ```
 
-A resposta traz `accessToken` (curto, 15 min por padrão) e `refreshToken` (30 dias,
-rotacionado a cada uso em `POST /auth/refresh`). Rotas de negócio usam o access token:
+A resposta traz `accessToken` (15 min) e `refreshToken` (30 dias, rotacionado a cada uso
+em `POST /auth/refresh`). Rotas de negócio usam o access token:
 
 ```bash
 curl http://localhost:3000/materials -H "Authorization: Bearer <accessToken>"
 ```
 
-Para mudar as credenciais do seed, defina `SEED_USER_EMAIL`, `SEED_USER_PASSWORD` e/ou
-`SEED_USER_NAME` no ambiente antes de rodar `prisma:migrate` ou `prisma:seed`.
+Para mudar as credenciais do seed: `SEED_USER_EMAIL`, `SEED_USER_PASSWORD`,
+`SEED_USER_NAME`, antes de `prisma:migrate` ou `prisma:seed`.
 
 ## Scripts
 
@@ -85,16 +74,67 @@ Para mudar as credenciais do seed, defina `SEED_USER_EMAIL`, `SEED_USER_PASSWORD
 
 ## Ambiente
 
-A aplicação **não sobe degradada**: o schema em [src/config/env.schema.ts](src/config/env.schema.ts)
-é validado no bootstrap e qualquer variável obrigatória ausente ou inválida aborta a
-inicialização.
+O schema em [src/config/env.schema.ts](src/config/env.schema.ts) é validado no bootstrap;
+variável obrigatória ausente ou inválida aborta a inicialização. Só `DATABASE_URL` e
+`JWT_SECRET` não têm padrão. As demais têm padrão, ou passam a ser exigidas quando a
+opção que depende delas é escolhida.
+
+**Aplicação e banco**
 
 | Variável | Obrigatória | Padrão | Descrição |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | sim | — | Connection string do PostgreSQL |
+| `DATABASE_URL` | sim | — | Connection string do PostgreSQL (`postgresql://...`) |
 | `NODE_ENV` | não | `development` | `development` \| `test` \| `production` |
 | `PORT` | não | `3000` | Porta HTTP |
 | `LOG_LEVEL` | não | `info` | `error` \| `warn` \| `info` \| `debug` \| `verbose` |
+| `POSTGRES_PORT` | não | `5432` | Porta publicada pelo docker-compose. Só o compose lê |
+
+**Autenticação**
+
+| Variável | Obrigatória | Padrão | Descrição |
+| --- | --- | --- | --- |
+| `JWT_SECRET` | sim | — | Chave HMAC dos JWT de sessão, mínimo 32 caracteres |
+| `JWT_EXPIRES_IN_SECONDS` | não | `900` | Validade do access token |
+| `REFRESH_TOKEN_EXPIRES_IN_SECONDS` | não | `2592000` | Validade do refresh token (30 dias) |
+| `ARGON2_TIME_COST` | não | `3` | Iterações do argon2, de 1 a 10 |
+
+**Importação de NFC-e**
+
+| Variável | Obrigatória | Padrão | Descrição |
+| --- | --- | --- | --- |
+| `NFCE_PROVIDER` | não | `AUTO` | `AUTO` (escolhe o provider pela UF da captura) \| `OFFICIAL_WEBSERVICE` |
+| `NFCE_IMPORT_MAX_ATTEMPTS` | não | `3` | Tentativas por captura, de 1 a 10 |
+| `NFCE_IMPORT_RETRY_DELAY_MS` | não | `1000` | Base da espera progressiva entre tentativas |
+| `NFCE_CANARY_URLS` | não | vazia | URLs das notas de referência do canário (seção abaixo). Vazia desliga |
+
+**Armazenamento de imagens**
+
+| Variável | Obrigatória | Padrão | Descrição |
+| --- | --- | --- | --- |
+| `STORAGE_PROVIDER` | não | `LOCAL_DISK` | `LOCAL_DISK` \| `S3` |
+| `UPLOADS_DIR` | não | `./uploads` | Raiz do disco local; sem efeito com `S3` |
+| `MAX_IMAGE_UPLOAD_SIZE_BYTES` | não | `5242880` | Teto do upload em bytes |
+| `S3_BUCKET_NAME` | só com `S3` | — | Bucket |
+| `S3_REGION` | não | `us-east-1` | Região do bucket |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | só com `S3` | — | Lidas pela cadeia padrão do SDK da AWS, não pelo `EnvService` |
+
+**Observabilidade e retenção**
+
+| Variável | Obrigatória | Padrão | Descrição |
+| --- | --- | --- | --- |
+| `AUDIT_LOG_RETENTION_DAYS` | não | `180` | Janela de `AuditLog` |
+| `REQUEST_LOG_RETENTION_DAYS` | não | `30` | Janela de `RequestLog`, e com ela os campos de falha |
+| `NOTIFICATION_SENDER` | não | `CONSOLE` | `CONSOLE` (log) \| `SMTP` (e-mail) |
+| `ERROR_ALERT_THROTTLE_SECONDS` | não | `300` | Silêncio por tipo de erro após um alerta; `0` desliga |
+| `SMTP_HOST` | só com `SMTP` | — | Servidor SMTP |
+| `SMTP_PORT` | não | `587` | Porta SMTP |
+| `SMTP_SECURE` | não | `false` | `true` \| `false` |
+| `SMTP_USER` / `SMTP_PASSWORD` | não | — | Credenciais, quando o servidor exige |
+| `ALERT_EMAIL_FROM` | só com `SMTP` | — | Remetente |
+| `ALERT_EMAIL_TO` | só com `SMTP` | — | Destinatário(s), separados por vírgula |
+
+As variáveis de cópia de segurança (`BACKUP_DIR`, `PG_CLIENT_MODE`) são lidas pelos
+scripts, não pela aplicação — ver [docs/RECOVERY.md](docs/RECOVERY.md).
 
 ## Estrutura
 
@@ -119,52 +159,28 @@ src/
 
 ## Prisma 7
 
-O Prisma 7 mudou três coisas que afetam a forma deste projeto:
+- A connection string não está no schema: vive em [prisma.config.ts](prisma.config.ts)
+  (CLI). Em runtime, quem lê `DATABASE_URL` é o `EnvService`.
+- O client é gerado em `src/shared/infrastructure/prisma/generated/`, não em
+  `node_modules` — fora do git, recriado pelo `postinstall`.
+- O client exige um driver adapter, montado pelo `PrismaService`.
 
-1. **A connection string saiu do schema.** `prisma/schema.prisma` declara só o
-   `provider`; a URL vive em [prisma.config.ts](prisma.config.ts), que é configuração de
-   build (CLI). Em tempo de execução quem lê `DATABASE_URL` é o `EnvService` validado.
-2. **O client é gerado dentro da árvore do projeto**, não mais em `node_modules`. O
-   destino é `src/shared/infrastructure/prisma/generated/` — escolhido de propósito:
-   assim qualquer import dele de fora de `infrastructure/` cai no guard do ESLint, do
-   mesmo jeito que um import de `@prisma/client` cairia. O diretório é gerado pelo
-   `postinstall` e está no `.gitignore`.
-3. **O client exige um driver adapter.** O `PrismaService` monta o `PrismaPg` com a URL
-   vinda do `EnvService`. Nada disso atravessa a fronteira de `infrastructure/`.
-
-Uma consequência do adapter merece atenção: o driver `pg` abre conexão sob demanda, então
-`$connect()` resolve com sucesso mesmo sem banco nenhum do outro lado. Por isso o
-`PrismaService` dispara um `SELECT 1` no `onModuleInit` — sem ele a API subiria degradada,
-anunciando uma conexão que não existe. Pelo mesmo motivo o healthcheck do
-`docker-compose.yml` executa uma query em vez de `pg_isready`, que reporta *healthy*
-mesmo quando o role ou o banco não existem.
+O driver `pg` abre conexão sob demanda: `$connect()` resolve mesmo sem banco do outro
+lado. Por isso o `PrismaService` roda um `SELECT 1` no `onModuleInit`, e o healthcheck do
+`docker-compose.yml` executa uma query em vez de `pg_isready`.
 
 ## Cópia de segurança
-
-Dois scripts versionados, sem credencial nenhuma dentro deles — ambos leem
-`DATABASE_URL`:
 
 ```bash
 bash scripts/backup/db-dump.sh                                  # gera ./backups/<banco>-<data>.dump
 bash scripts/backup/db-restore.sh backups/<arquivo>.dump --drop # restaura
 ```
 
-Não é preciso ter `pg_dump` instalado: por padrão os scripts usam o cliente que já vem
-dentro do container do compose (`PG_CLIENT_MODE`). No Windows, rode pelo Git Bash.
-
-Em produção a cópia não é manual: o workflow
-[.github/workflows/backup.yml](.github/workflows/backup.yml) roda o mesmo `db-dump.sh`
-todo dia às 03:00 de Porto Alegre (06:00 UTC) e guarda o arquivo **cifrado** como
-artefato da execução, e também aceita disparo manual pela aba **Actions**.
-
-O procedimento completo, o agendamento, o que a cópia **não** cobre (imagens enviadas,
-`.env`) e o registro dos ciclos de dump e restauração estão em
-[docs/RECOVERY.md](docs/RECOVERY.md).
+Sem credencial nos scripts — ambos leem `DATABASE_URL`. Em produção a cópia roda sozinha
+todo dia pelo [.github/workflows/backup.yml](.github/workflows/backup.yml), cifrada.
+Procedimento completo, agendamento e o que não está coberto: [docs/RECOVERY.md](docs/RECOVERY.md).
 
 ## Dependências fixadas por override
-
-O `package.json` tem um bloco `overrides` com três entradas, todas para zerar advisories
-de pacotes transitivos que não dependem de nós:
 
 | Pacote | Por quê |
 | --- | --- |
@@ -172,99 +188,51 @@ de pacotes transitivos que não dependem de nós:
 | `mysql2` | Vem no CLI do Prisma (adapters de todos os bancos); este projeto usa Postgres |
 | `deepmerge-ts` | Transitiva do `@prisma/config`, que ainda pede a major 7 |
 
-Cada override foi verificado contra o caminho real: `prisma generate`, `prisma validate`,
-`prisma migrate status`, build e suíte completa. Podem ser removidos conforme os pacotes
-de origem atualizarem.
+Removíveis conforme os pacotes de origem atualizarem.
 
 ## Observabilidade
 
-Toda linha de log é um JSON com `timestamp`, `level`, `message`, `context` e
-`correlationId`. O correlation id vem do header `x-correlation-id` quando o cliente
-envia, e é gerado quando não; ele volta no header da resposta e aparece no corpo de
-qualquer erro. Nenhuma linha de log carrega senha, hash, token ou CPF: a redação é
-aplicada no próprio sink, não em cada ponto de chamada.
+Log estruturado em JSON (`timestamp`, `level`, `message`, `context`, `correlationId`),
+sem senha, hash, token ou CPF. O correlation id vem do header `x-correlation-id` ou é
+gerado; volta no header da resposta e no corpo de erro.
 
 ### Registro de falha
 
-Não existe tabela separada de erro. `RequestLog` — uma linha por requisição mutante,
-gravada FORA da transação de negócio, para sobreviver ao rollback da requisição que
-descreve — guarda também o motivo da falha, preenchido só quando houve falha:
+Não há tabela separada de erro: `RequestLog` (uma linha por requisição mutante) guarda o
+motivo, preenchido só quando houve falha:
 
 | Campo | Conteúdo |
 | --- | --- |
-| `errorType` | classe da exceção (`InsufficientStockError`, `PrismaClientKnownRequestError`) |
+| `errorType` | classe da exceção |
 | `errorMessage` | mensagem, redigida |
 | `stackTrace` | rastro técnico, redigido |
 | `errorContext` | propriedades escalares da exceção e violações de validação |
 
-O que pode ser escrito nesses quatro campos é decidido por `describeFailure`, em
-[src/shared/domain/observability/error-details.ts](src/shared/domain/observability/error-details.ts):
-valor de propriedade sensível é omitido, senha/token/CPF são redigidos e propriedade
-cujo valor é objeto é descartada — é o que mantém payload de nota, corpo de requisição
-e entidade inteira fora do registro.
-
-A retenção é a que já existia: as mesmas janelas de `AUDIT_LOG_RETENTION_DAYS` e
-`REQUEST_LOG_RETENTION_DAYS`, no mesmo job diário.
+Mesma retenção de `RequestLog` (`REQUEST_LOG_RETENTION_DAYS`). Duas limitações
+conhecidas: só requisição mutante grava linha (um 500 em `GET` só existe no log
+estruturado); e o throttle de alerta (`ERROR_ALERT_THROTTLE_SECONDS`) vive em memória do
+processo, zerando a cada restart.
 
 ### Investigação
-
-Um erro 500 devolve `errorId`, igual ao correlation id. Com ele, uma consulta devolve
-causa, requisição e escritas juntas:
 
 ```
 GET /audit-log/investigate?errorId=<errorId>
 ```
 
-Aceita também `correlationId` ou `transactionId`. A resposta traz a linha de
-`RequestLog` (com os campos de erro acima) e, em ordem, toda escrita feita pela mesma
-requisição.
+Aceita também `correlationId` ou `transactionId`. Devolve a linha de `RequestLog` e, em
+ordem, toda escrita feita pela mesma requisição.
 
 ### Alertas operacionais
 
-Erro não tratado dispara alerta por um contrato, `NotificationSender`, nunca por
-chamada direta a um cliente de e-mail. Quem alerta conhece só o contrato; acrescentar
-Discord, Telegram ou webhook é implementação nova. Falha no envio do alerta é
-registrada em log e nunca derruba o que a originou.
-
-O alerta é limitado por `errorType`: um erro em laço gera uma mensagem e, na próxima,
-a contagem do que foi suprimido no intervalo.
-
-| Variável | Obrigatória | Padrão | Descrição |
-| --- | --- | --- | --- |
-| `NOTIFICATION_SENDER` | não | `CONSOLE` | `CONSOLE` (log) \| `SMTP` (e-mail) |
-| `ERROR_ALERT_THROTTLE_SECONDS` | não | `300` | Silêncio por `errorType` após um alerta; `0` desliga |
-| `SMTP_HOST` | só com `SMTP` | — | Servidor SMTP |
-| `SMTP_PORT` | não | `587` | Porta SMTP |
-| `SMTP_SECURE` | não | `false` | `true` \| `false` |
-| `SMTP_USER` / `SMTP_PASSWORD` | não | — | Credenciais, quando o servidor exige |
-| `ALERT_EMAIL_FROM` | só com `SMTP` | — | Remetente |
-| `ALERT_EMAIL_TO` | só com `SMTP` | — | Destinatário(s), separados por vírgula |
+Erro não tratado dispara alerta por `NotificationSender` (`CONSOLE` ou `SMTP`), limitado
+por tipo de erro — variáveis na tabela de Ambiente, acima.
 
 ### Canário da extração de NFC-e
 
-O scraping do portal da SEFAZ depende de marcação que ninguém aqui controla e que muda
-sem aviso. Sem vigilância, a quebra só apareceria para o usuário que tentasse importar
-uma nota no caixa. Um job diário relê notas de referência já conhecidas e compara o
-resultado com valores fixados em código: nome do estabelecimento, total da nota e
-quantidade de itens.
+Job diário relê notas de referência fixadas em
+[pinned-reference-invoices.ts](src/modules/invoices/domain/canary/pinned-reference-invoices.ts)
+e compara nome do estabelecimento, total e quantidade de itens, para detectar quebra do
+scraping por mudança no portal da SEFAZ. URLs em `NFCE_CANARY_URLS`; vazio desliga.
 
-As URLs das notas ficam em `NFCE_CANARY_URLS`; os valores esperados ficam em
-[pinned-reference-invoices.ts](src/modules/invoices/domain/canary/pinned-reference-invoices.ts),
-identificados pela chave de acesso que viaja dentro da própria URL — o par não depende de
-ordem nem de índice. Lista vazia desliga o canário, que é o estado correto em
-desenvolvimento e nos testes.
-
-**O alarme só dispara quando TODAS as notas de referência falham.** A consulta pública da
-NFC-e não fica disponível indefinidamente, então uma nota que emudece enquanto as outras
-continuam legíveis é idade daquela nota, não quebra do portal. Por isso configure duas ou
-três, de datas claramente diferentes: com uma só não há como distinguir os dois casos, e o
-canário avisa isso em cada execução.
-
-O canário **nunca escreve em `test/fixtures/`**. Repovoar a fixture automaticamente faria
-os testes do scraper validarem a marcação nova e continuarem verdes, destruindo justamente
-o alarme que ele existe para dar. Fixture muda por decisão humana, depois de alguém olhar
-o que o portal fez.
-
-| Variável | Obrigatória | Padrão | Descrição |
-| --- | --- | --- | --- |
-| `NFCE_CANARY_URLS` | não | — | URLs das notas de referência, separadas por vírgula ou espaço; vazio desliga |
+Alerta só dispara quando **todas** as notas de referência falham — por isso configure
+duas ou três, de datas diferentes.

@@ -94,14 +94,16 @@ describe('RequestContextService', () => {
       expect(service.error).toBeUndefined();
 
       service.setError({
-        errorType: 'InsufficientStockError',
-        errorMessage: 'Not enough stock',
-        stackTrace: 'Error: Not enough stock',
+        errorType: 'EntityInUseError',
+        errorMessage: 'The material is referenced by 3 sale items',
+        stackTrace: 'Error: The material is referenced by 3 sale items',
         errorContext: null,
       });
 
-      expect(service.error?.errorType).toBe('InsufficientStockError');
-      expect(service.current?.error?.errorMessage).toBe('Not enough stock');
+      expect(service.error?.errorType).toBe('EntityInUseError');
+      expect(service.current?.error?.errorMessage).toBe(
+        'The material is referenced by 3 sale items',
+      );
     });
   });
 

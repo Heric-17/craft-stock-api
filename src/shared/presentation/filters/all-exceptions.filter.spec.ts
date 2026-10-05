@@ -13,9 +13,14 @@ import { RequestContextService } from '../../infrastructure/logging/request-cont
 import type { StructuredLogger } from '../../infrastructure/logging/structured-logger.service';
 import { AllExceptionsFilter, type ErrorResponseBody } from './all-exceptions.filter';
 
-class InsufficientStockError extends DomainError {
+/**
+ * Stands in for any domain error the filter has no explicit entry for, which
+ * is what the default-to-422 branch is about. Deliberately not the name of a
+ * real exception: the mapping under test is the fallback, not that class's.
+ */
+class UnmappedDomainError extends DomainError {
   constructor() {
-    super('Not enough stock to produce the requested quantity');
+    super('A business rule refused the operation');
   }
 }
 
@@ -85,12 +90,12 @@ describe('AllExceptionsFilter', () => {
   });
 
   it('renders a domain error as 422', () => {
-    filter.catch(new InsufficientStockError(), host);
+    filter.catch(new UnmappedDomainError(), host);
 
     expect(captured.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
     expect(captured.body).toMatchObject({
-      error: 'InsufficientStockError',
-      message: 'Not enough stock to produce the requested quantity',
+      error: 'UnmappedDomainError',
+      message: 'A business rule refused the operation',
     });
   });
 
@@ -184,7 +189,7 @@ describe('AllExceptionsFilter', () => {
     });
 
     it('still defaults an unmapped domain error to 422', () => {
-      filter.catch(new InsufficientStockError(), host);
+      filter.catch(new UnmappedDomainError(), host);
 
       expect(captured.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
     });
@@ -209,9 +214,9 @@ describe('AllExceptionsFilter', () => {
 
     it('records the domain error class, not a generic one', () => {
       requestContext.run({ correlationId: 'c1', transactionId: 't1' }, () => {
-        filter.catch(new InsufficientStockError(), host);
+        filter.catch(new UnmappedDomainError(), host);
 
-        expect(requestContext.error?.errorType).toBe('InsufficientStockError');
+        expect(requestContext.error?.errorType).toBe('UnmappedDomainError');
       });
     });
 

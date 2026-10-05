@@ -340,8 +340,9 @@ model AuditLog {
 
 // One row per mutating request, written whether or not it produced any
 // AuditLog rows — a route that touched nothing is itself an investigation
-// fact. Written outside the business transaction, like ErrorLog: a rollback
-// must not erase the record that the attempt happened.
+// fact. Written outside the business transaction, and for the same reason the
+// failure details below live here: a rollback must not erase the record that
+// the attempt happened.
 model RequestLog {
   id            String   @id @default(uuid())
   transactionId String   @unique
