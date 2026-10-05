@@ -11,6 +11,11 @@ concurrency:
 env:
   NODE_ENV: test
   LOG_LEVEL: error
+  # Only needed to be syntactically valid, never reachable: the unit suite
+  # never connects (it only validates the env schema in its module-wiring
+  # specs), and the e2e suite's own Testcontainers globalSetup overwrites
+  # this with its own throwaway Postgres's real connection string before any
+  # e2e spec runs — see test/support/global-setup.ts.
   DATABASE_URL: postgresql://craftstock:craftstock@localhost:5432/craftstock_test?schema=public
   # The env schema is validated when EnvModule is imported, so even the
   # module-wiring tests need a valid environment just to load the file. Every
@@ -24,26 +29,6 @@ jobs:
   ci:
     name: type-check, lint and tests
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        # Same major as docker-compose.yml and as the managed server (18.6):
-        # the e2e suite is worth little if it runs against a major nothing
-        # else does.
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: craftstock
-          POSTGRES_PASSWORD: craftstock
-          POSTGRES_DB: craftstock_test
-        ports:
-          - 5432:5432
-        # A real query, not `pg_isready`: the latter reports healthy even when the
-        # role or database is missing, which hides a broken cluster.
-        options: >-
-          --health-cmd "psql -U craftstock -d craftstock_test -c 'SELECT 1' || exit 1"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
 
     steps:
       - name: Checkout
@@ -71,16 +56,38 @@ jobs:
         run: npm run prisma:validate
 
       - name: Unit tests
-        run: npm run test
+        run: npm run test:cov
 
-      # The service container starts with an empty database, and nothing in the
-      # e2e suite creates the schema: the specs drive real HTTP routes against
-      # real tables. `deploy` rather than `dev` — it applies the committed
-      # migrations and never generates one, so CI cannot quietly drift from
-      # prisma/migrations. The seed is not needed: each spec creates and deletes
-      # the rows it uses, including its own user.
-      - name: Apply migrations
-        run: npm run prisma:deploy
-
+      # No postgres service and no separate migrate step: Testcontainers'
+      # globalSetup (test/support/global-setup.ts) starts its own throwaway
+      # Postgres (same image/major as docker-compose.yml, for the same
+      # version-parity reason documented there), applies the committed
+      # migrations with `prisma migrate deploy` against it, and tears it down
+      # afterwards. `ubuntu-latest` ships Docker as the host engine already,
+      # so this needs no extra setup. Each spec creates and deletes the rows
+      # it uses, including its own user — no seed required.
       - name: E2E tests
-        run: npm run test:e2e
+        run: npm run test:e2e:cov
+
+      # Unit and e2e cover different layers by design (domain/application via
+      # fakes, infrastructure/presentation via this real-Postgres e2e run —
+      # see the comment on coverageThreshold in jest.config.js). Merging them
+      # is what makes the uploaded artifact an honest whole-system number
+      # instead of two reports that each look partial on their own.
+      - name: Merge coverage reports
+        if: always()
+        run: node scripts/merge-coverage.js
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage/merged/
+            coverage/unit/
+            coverage/e2e/
+          # A failure before any test ran (e.g. type-check) leaves no coverage
+          # to upload; that is not itself a reason to fail this step.
+          if-no-files-found: ignore
+          retention-days: 30

@@ -27,7 +27,11 @@ export default tseslint.config(
       parserOptions: {
         projectService: {
           // Jest configs are plain CommonJS and live outside any tsconfig.
-          allowDefaultProject: ['jest.config.js', 'test/jest-e2e.config.js'],
+          allowDefaultProject: [
+            'jest.config.js',
+            'test/jest-e2e.config.js',
+            'scripts/merge-coverage.js',
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -80,6 +84,16 @@ export default tseslint.config(
     files: ['**/*.spec.ts', '**/*.e2e-spec.ts'],
     rules: {
       '@typescript-eslint/unbound-method': 'off',
+    },
+  },
+  {
+    // Plain CommonJS CI script, not part of the TypeScript build — `require`
+    // is the correct module system here, and the istanbul report libraries
+    // it loads ship no types.
+    files: ['scripts/**/*.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
     },
   },
 );

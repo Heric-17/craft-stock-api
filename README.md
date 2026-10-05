@@ -5,7 +5,7 @@ Gestão de estoque fracionado, precificação e projeção de capacidade de prod
 ## Requisitos
 
 - Node.js 22+ (o Prisma 7 exige 20.19+)
-- Docker (para o PostgreSQL de desenvolvimento)
+- Docker (para o PostgreSQL de desenvolvimento e para os testes e2e via Testcontainers)
 
 ## Começando
 
@@ -65,7 +65,8 @@ Para mudar as credenciais do seed: `SEED_USER_EMAIL`, `SEED_USER_PASSWORD`,
 | `npm run format` | Prettier |
 | `npm run test` | Testes unitários |
 | `npm run test:cov` | Testes unitários com cobertura |
-| `npm run test:e2e` | Testes e2e (exige o banco no ar) |
+| `npm run test:e2e` | Testes e2e. Sobe e migra um Postgres descartável via Testcontainers (exige Docker rodando) — não depende do `docker compose up` acima |
+| `npm run test:e2e:cov` | Testes e2e com cobertura |
 | `npm run prisma:validate` | Valida `prisma/schema.prisma` |
 | `npm run prisma:generate` | Regera o Prisma Client |
 | `npm run prisma:migrate` | Cria/aplica migration de desenvolvimento (e roda o seed) |
