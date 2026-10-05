@@ -1,0 +1,19 @@
+node_modules
+dist
+coverage
+.git
+.github
+docs
+backups
+uploads
+test
+*.log
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+
+# Regenerated fresh inside the image by `prisma generate` (deps stage) — a
+# copy left over from building on the host must never leak into the build
+# context, since it may carry a different platform's engine binaries.
+src/shared/infrastructure/prisma/generated

@@ -136,9 +136,153 @@ opção que depende delas é escolhida.
 As variáveis de cópia de segurança (`BACKUP_DIR`, `PG_CLIENT_MODE`) são lidas pelos
 scripts, não pela aplicação — ver [docs/RECOVERY.md](docs/RECOVERY.md).
 
+## Implantação
+
+Processo de publicação independente de provedor: funciona do mesmo jeito num VPS com
+`docker run`, em `docker compose`, ou em qualquer plataforma de contêiner gerenciada —
+sem nenhum arquivo de configuração específico de provedor neste repositório.
+
+### Pré-requisitos
+
+- Sem contêiner: Node.js 22+ (ver [package.json](package.json), `engines.node`).
+- Com contêiner (recomendado): só o Docker — a imagem já traz o Node correto.
+- PostgreSQL acessível, mesma major usada em desenvolvimento (18) — ver
+  [docker-compose.yml](docker-compose.yml).
+- Todas as variáveis de ambiente obrigatórias da seção [Ambiente](#ambiente)
+  definidas para a instalação. Só `DATABASE_URL` e `JWT_SECRET` não têm padrão —
+  nenhum dos dois pode vir com valor de desenvolvimento.
+
+### Build e execução
+
+Sem contêiner:
+
+```bash
+npm ci
+npm run build
+npm run prisma:deploy   # ver a regra de ordem na próxima seção — isto tem que
+                         # rodar e terminar com sucesso ANTES da linha abaixo
+npm run start:prod      # node dist/main.js
+```
+
+Com contêiner — build reprodutível, independente da máquina que constrói:
+
+```bash
+docker build -t craftstock-api .
+docker run -d --name craftstock-api \
+  --env-file .env \
+  -p 3000:3000 \
+  craftstock-api
+```
+
+O [Dockerfile](Dockerfile) é multi-estágio (instala e gera o client Prisma, compila,
+e só então monta a imagem final), roda como usuário não privilegiado (`node`, do
+próprio runtime oficial) e não assume nenhum provedor.
+
+### Migrations: quando e como são aplicadas
+
+Regra inegociável: **o esquema é atualizado antes do código novo entrar em serviço,
+nunca depois.** Esquema atrasado atrás de código novo faz a falha aparecer como erro
+de consulta em tempo de execução, não como falha de publicação — exatamente o problema
+que este processo existe para fechar.
+
+Três opções foram avaliadas:
+
+- **Comando manual documentado, sem automação** — descartada como único mecanismo:
+  é a lacuna que motivou esta tarefa. Depende de alguém lembrar de rodar o comando a
+  cada publicação, e o esquecimento só aparece depois, como erro de consulta.
+- **Etapa separada de publicação** (um job/"release command" que a plataforma dispara
+  antes de trocar o contêiner) — descartada como mecanismo PRINCIPAL porque depende de
+  um recurso que varia por provedor, o acoplamento que este documento evita (seção
+  "Fora de escopo" do planejamento desta tarefa). Continua disponível como alternativa
+  manual, abaixo, para quem preferir inspecionar a migration antes de deixá-la rodar.
+- **Escolhida: migration dentro do próprio entrypoint do contêiner**, executada antes
+  do processo da API assumir a porta. Funciona identicamente em qualquer plataforma
+  capaz de rodar a imagem, não depende de nenhum recurso específico de provedor, e é
+  impossível esquecer — acontece em toda subida de contêiner, sempre.
+
+Na prática: o `ENTRYPOINT` do [Dockerfile](Dockerfile) roda `npm run prisma:deploy`
+(`prisma migrate deploy` — só aplica migrations já versionadas, nunca cria uma) e,
+SOMENTE se ela terminar com sucesso, troca para o processo da API
+(`exec node dist/main.js`).
+
+Alternativa manual, fora do caminho automático, para quem quiser aplicar e inspecionar
+antes de trocar o contêiner em execução:
+
+```bash
+docker run --rm --env-file .env craftstock-api npm run prisma:deploy
+# só então reinicie/troque o contêiner da API
+```
+
+**Se a migration falhar**, o script do entrypoint usa `set -e`: a execução para antes
+de iniciar a API, o contêiner termina com código de saída diferente de zero, e nenhuma
+instância nova entra em serviço com esquema desatualizado ou parcialmente aplicado.
+Verificado: uma credencial de banco inválida interrompe o contêiner nesse ponto, sem
+nenhuma linha de log de inicialização da API.
+
+**Se a migration tiver sucesso e o processo Node falhar ao iniciar depois** (bug na
+aplicação, variável de ambiente ausente etc.): o esquema já avançou, mas a nova versão
+do código não chegou a assumir tráfego. Como esta instalação é de contêiner único (seção
+1 do CLAUDE.md — sem réplicas), o resultado é indisponibilidade até a causa ser
+corrigida e uma imagem que funcione subir no lugar; não existe "voltar" o código sem
+antes avaliar se o esquema já aplicado é compatível com a versão anterior (ver
+Reversão, abaixo). Por isso toda migration deste projeto deve, quando possível, ser
+aditiva — tolerável pela versão de código anterior durante a troca.
+
+### Verificação após subir
+
+```bash
+curl -i http://SEU_HOST:3000/health
+```
+
+`GET /health` é checagem de vida (liveness), DELIBERADAMENTE sem tocar o banco — ver
+[health.controller.ts](src/modules/health/presentation/health.controller.ts). Um `200`
+prova que o processo Node está de pé, NÃO que o banco está acessível nem que o esquema
+está em dia. A imagem também declara essa rota como `HEALTHCHECK` do Docker, então
+`docker ps` já mostra `(healthy)`/`(unhealthy)` sem precisar do curl acima — mas, de
+novo, só para o processo, não para o banco.
+
+Para o esquema, confira separadamente, de onde `DATABASE_URL` da instalação for
+alcançável:
+
+```bash
+npx prisma migrate status    # esperado: "Database schema is up to date!"
+```
+
+Como o entrypoint já faz a migration falhar a subida do contêiner (seção acima), um
+contêiner em execução já é indício forte de que a migration passou — mas `migrate
+status` é a única confirmação direta do estado do esquema.
+
+### Reversão
+
+Voltar o CÓDIGO é trocar o contêiner pela imagem da versão anterior (mantenha a tag
+anterior disponível, ou reconstrua a partir do commit/tag anterior do git):
+
+```bash
+docker run -d --name craftstock-api --env-file .env -p 3000:3000 craftstock-api:<tag-anterior>
+```
+
+**Migration não se reverte sozinha.** `prisma migrate deploy` só aplica para frente;
+voltar o código não desfaz nenhuma mudança de esquema já aplicada — o Prisma não tem
+"migration de volta" automática. Se a migration que motivou o rollback for destrutiva
+(`DROP COLUMN`, `DROP TABLE`, `NOT NULL` sem default em tabela populada, renomear
+coluna), o código anterior pode já não ser compatível com o esquema atual: ele espera
+uma coluna ou tabela que não existe mais.
+
+Por isso, antes de aplicar uma migration destrutiva: gerar uma cópia de segurança
+([scripts/backup/db-dump.sh](scripts/backup/db-dump.sh), procedimento completo em
+[docs/RECOVERY.md](docs/RECOVERY.md)) e já ter decidido o caminho de volta — uma
+migration nova que desfaça a mudança, ou restaurar a cópia feita antes da destrutiva.
+
+### Nota operacional
+
+Planos gratuitos de plataformas gerenciadas costumam hibernar o contêiner após
+inatividade, o que atrasa a primeira requisição depois de um período ocioso.
+
 ## Estrutura
 
 ```
+Dockerfile                      imagem de produção (multi-estágio, usuário não root,
+                                entrypoint aplica a migration e só então inicia a API)
 docs/RECOVERY.md                cópia de segurança e restauração do banco
 scripts/backup/                scripts de dump e restore do PostgreSQL
 prisma.config.ts                configuração do CLI do Prisma (inclui DATABASE_URL e o seed)
