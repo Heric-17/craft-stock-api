@@ -9,7 +9,7 @@ function build(
     id: 'product-1',
     name: 'Bolo de cenoura',
     description: null,
-    imageUrl: null,
+    imageKey: null,
     fixedOperationalCost: Money.fromDecimalString('2.50'),
     profitMargin: 35,
     manualPrice: null,

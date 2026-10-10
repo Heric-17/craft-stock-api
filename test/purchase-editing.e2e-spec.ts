@@ -7,6 +7,7 @@ import { PurchaseEditingService } from '../src/modules/purchases/application/ser
 import { PurchasesService } from '../src/modules/purchases/application/services/purchases.service';
 import { PendingDiscountAllocationError } from '../src/modules/purchases/domain/purchase.error';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
+import { configureTestApp } from './support/configure-test-app';
 
 /** The captured note, as the extraction froze it. */
 const RAW_INVOICE = {
@@ -41,6 +42,7 @@ describe('Purchase editing and history (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
 
     purchases = moduleRef.get(PurchasesService);

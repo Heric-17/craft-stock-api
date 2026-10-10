@@ -39,6 +39,20 @@ function silentLogger(): StructuredLogger {
   return logger;
 }
 
+/**
+ * The view exposes the absolute URL now, so a test that wants to ask storage
+ * about the object has to go back to the key. Checking that the URL really is
+ * the configured base plus the key, rather than trusting whatever the view
+ * says, is also what would catch a resolver that quietly stopped resolving.
+ */
+function storageKeyOf(imageUrl: string | null): string {
+  const prefix = `${InMemoryStorageProvider.PUBLIC_BASE}/`;
+
+  expect(imageUrl).toEqual(expect.stringContaining(prefix));
+
+  return (imageUrl as string).slice(prefix.length);
+}
+
 function buildService(storage: InMemoryStorageProvider = new InMemoryStorageProvider()): {
   service: CompositeProductsService;
   materials: InMemoryMaterialRepository;
@@ -83,7 +97,7 @@ function buildMaterial(
     id: randomUUID(),
     name: 'Farinha de trigo',
     description: null,
-    imageUrl: null,
+    imageKey: null,
     packageCost: Money.fromDecimalString('10.00'),
     packageQuantity: 1000,
     // 1 kg bag of flour, consumed by the gram.
@@ -355,9 +369,10 @@ describe('CompositeProductsService', () => {
         mimeType: 'image/png',
       });
 
-      expect(updated.imageUrl).not.toBeNull();
-      expect(updated.imageUrl).not.toMatch(/^https?:\/\//);
-      expect(storage.has(updated.imageUrl as string)).toBe(true);
+      // The view carries the absolute URL; what was stored is the key
+      // inside it, which is what storage knows about.
+      expect(updated.imageUrl).toMatch(/^https?:\/\//);
+      expect(storage.has(storageKeyOf(updated.imageUrl))).toBe(true);
     });
 
     it('deletes the previous image once the new one is saved', async () => {
@@ -368,7 +383,7 @@ describe('CompositeProductsService', () => {
         buffer: Buffer.from('first'),
         mimeType: 'image/jpeg',
       });
-      const firstKey = first.imageUrl as string;
+      const firstKey = storageKeyOf(first.imageUrl);
 
       const second = await service.setImage(created.id, {
         buffer: Buffer.from('second'),
@@ -376,7 +391,7 @@ describe('CompositeProductsService', () => {
       });
 
       expect(storage.has(firstKey)).toBe(false);
-      expect(storage.has(second.imageUrl as string)).toBe(true);
+      expect(storage.has(storageKeyOf(second.imageUrl))).toBe(true);
     });
 
     it('throws CompositeProductNotFoundError for an unknown product', async () => {
@@ -401,16 +416,18 @@ describe('CompositeProductsService', () => {
         buffer: Buffer.from('first'),
         mimeType: 'image/jpeg',
       });
-      const firstKey = first.imageUrl as string;
+      const firstKey = storageKeyOf(first.imageUrl);
 
       const second = await service.setImage(created.id, {
         buffer: Buffer.from('second'),
         mimeType: 'image/jpeg',
       });
 
-      expect(second.imageUrl).not.toBe(firstKey);
-      expect(storage.has(second.imageUrl as string)).toBe(true);
-      expect((await compositeProducts.findById(created.id))?.imageUrl).toBe(second.imageUrl);
+      expect(second.imageUrl).not.toBe(first.imageUrl);
+      expect(storage.has(storageKeyOf(second.imageUrl))).toBe(true);
+      expect((await compositeProducts.findById(created.id))?.imageKey).toBe(
+        storageKeyOf(second.imageUrl),
+      );
       expect(storage.has(firstKey)).toBe(true);
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining(firstKey),
@@ -421,14 +438,14 @@ describe('CompositeProductsService', () => {
   });
 
   describe('removeImage', () => {
-    it('deletes the stored image and clears imageUrl', async () => {
+    it('deletes the stored image and clears the key', async () => {
       const { service, storage } = buildService();
       const created = await service.create(buildCreateInput());
       const withImage = await service.setImage(created.id, {
         buffer: Buffer.from('bytes'),
         mimeType: 'image/webp',
       });
-      const key = withImage.imageUrl as string;
+      const key = storageKeyOf(withImage.imageUrl);
 
       const cleared = await service.removeImage(created.id);
 
@@ -445,7 +462,7 @@ describe('CompositeProductsService', () => {
       expect(cleared.imageUrl).toBeNull();
     });
 
-    it('clears imageUrl even when deleting the stored image fails', async () => {
+    it('clears the key even when deleting the stored image fails', async () => {
       const storage = new DeleteFailingStorageProvider();
       const { service, compositeProducts, logger } = buildService(storage);
       const created = await service.create(buildCreateInput());
@@ -453,12 +470,12 @@ describe('CompositeProductsService', () => {
         buffer: Buffer.from('bytes'),
         mimeType: 'image/webp',
       });
-      const key = withImage.imageUrl as string;
+      const key = storageKeyOf(withImage.imageUrl);
 
       const cleared = await service.removeImage(created.id);
 
       expect(cleared.imageUrl).toBeNull();
-      expect((await compositeProducts.findById(created.id))?.imageUrl).toBeNull();
+      expect((await compositeProducts.findById(created.id))?.imageKey).toBeNull();
       expect(storage.has(key)).toBe(true);
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining(key),

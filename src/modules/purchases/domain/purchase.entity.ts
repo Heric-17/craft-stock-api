@@ -132,6 +132,12 @@ export class Purchase {
       if (!allocated.equals(props.discountTotal)) {
         throw new DiscountAllocationError(
           `Attributed discount adds up to ${allocated.toDecimalString()}, which does not match the note's discountTotal of ${props.discountTotal.toDecimalString()}.`,
+          {
+            reason: 'SUM_MISMATCH',
+            expected: props.discountTotal.toDecimalString(),
+            provided: allocated.toDecimalString(),
+            mode: props.discountAllocationMode,
+          },
         );
       }
     }
@@ -333,6 +339,11 @@ export class Purchase {
 
       throw new PendingDiscountAllocationError(
         `Purchase ${this.id} still has a pending manual discount allocation: its lines add up to ${allocated.toDecimalString()} against a discountTotal of ${this.discountTotal.toDecimalString()}. Restate the allocation before completing the edit.`,
+        {
+          purchaseId: this.id,
+          expected: this.discountTotal.toDecimalString(),
+          provided: allocated.toDecimalString(),
+        },
       );
     }
 
@@ -351,6 +362,12 @@ export class Purchase {
     if (this.discountTotal.isGreaterThan(grossTotal)) {
       throw new DiscountAllocationError(
         `Removing or reducing lines would leave a discount of ${this.discountTotal.toDecimalString()} against a purchase worth ${grossTotal.toDecimalString()}.`,
+        {
+          reason: 'DISCOUNT_EXCEEDS_GROSS',
+          mode: this.discountAllocationMode,
+          expected: grossTotal.toDecimalString(),
+          provided: this.discountTotal.toDecimalString(),
+        },
       );
     }
 

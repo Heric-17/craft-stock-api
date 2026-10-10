@@ -1,42 +1,84 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 
+import { EnvService } from '../../../config/env.service';
 import { Public } from '../../../shared/presentation/decorators/public.decorator';
-import type { LoginResult } from '../application/dto/auth.dto';
+import type { SessionResponse, SessionResult } from '../application/dto/auth.dto';
 import { AuthenticationService } from '../application/services/authentication.service';
+import { InvalidRefreshTokenError } from '../domain/auth.error';
 import { LoginDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
+import {
+  clearRefreshTokenCookie,
+  readRefreshTokenCookie,
+  setRefreshTokenCookie,
+  type RefreshTokenCookieConfig,
+} from './refresh-token-cookie';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authentication: AuthenticationService) {}
+  constructor(
+    private readonly authentication: AuthenticationService,
+    private readonly env: EnvService,
+  ) {}
 
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDto): Promise<LoginResult> {
-    return this.authentication.login({ email: dto.email, password: dto.password });
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<SessionResponse> {
+    const session = await this.authentication.login({ email: dto.email, password: dto.password });
+
+    return this.establishSession(session, response);
   }
 
-  /**
-   * Public like login: a client calling this has, by definition, no valid
-   * access token left — that is the whole reason it needs to refresh one.
-   */
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  refresh(@Body() dto: RefreshTokenDto): Promise<LoginResult> {
-    return this.authentication.refresh(dto.refreshToken);
+  async refresh(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<SessionResponse> {
+    const presented = readRefreshTokenCookie(request);
+
+    if (presented === null) {
+      throw new InvalidRefreshTokenError('Refresh token is invalid, expired, or already used.');
+    }
+
+    const session = await this.authentication.refresh(presented);
+
+    return this.establishSession(session, response);
   }
 
-  /**
-   * Public for the same reason: revoking a session must not itself require
-   * a live access token, since the point may be to end a session whose
-   * access token already expired.
-   */
   @Public()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(@Body() dto: RefreshTokenDto): Promise<void> {
-    await this.authentication.logout(dto.refreshToken);
+  async logout(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    const presented = readRefreshTokenCookie(request);
+
+    if (presented !== null) {
+      await this.authentication.logout(presented);
+    }
+
+    clearRefreshTokenCookie(response, this.cookieConfig());
+  }
+
+  private establishSession(session: SessionResult, response: Response): SessionResponse {
+    const { refreshToken, ...body } = session;
+
+    setRefreshTokenCookie(response, refreshToken, this.cookieConfig());
+
+    return body;
+  }
+
+  private cookieConfig(): RefreshTokenCookieConfig {
+    return {
+      secure: this.env.get('AUTH_COOKIE_SECURE'),
+      maxAgeSeconds: this.env.get('REFRESH_TOKEN_EXPIRES_IN_SECONDS'),
+    };
   }
 }

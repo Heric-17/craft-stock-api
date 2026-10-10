@@ -22,6 +22,17 @@ export class InMemoryStorageProvider implements StorageProvider {
     return Promise.resolve();
   }
 
+  /**
+   * A fixed, obviously fake base, so a test can assert that a view exposes
+   * an absolute URL built from the key — never the bare key — without caring
+   * which backend produced it.
+   */
+  publicUrl(key: string): string {
+    return `${InMemoryStorageProvider.PUBLIC_BASE}/${key}`;
+  }
+
+  static readonly PUBLIC_BASE = 'https://images.test/uploads';
+
   has(key: string): boolean {
     return this.filesByKey.has(key);
   }

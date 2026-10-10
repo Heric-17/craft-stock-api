@@ -24,6 +24,13 @@ class UnmappedDomainError extends DomainError {
   }
 }
 
+/** Stands in for any domain error that carries a typed payload. */
+class DetailedDomainError extends DomainError<{ offending: string; count: number }> {
+  constructor() {
+    super('A business rule refused the operation', { offending: 'flour', count: 2 });
+  }
+}
+
 interface Captured {
   status: number;
   body: ErrorResponseBody;
@@ -81,11 +88,35 @@ describe('AllExceptionsFilter', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('collects validation violations under details', () => {
+  it('publishes structured validation violations under details', () => {
+    filter.catch(
+      new BadRequestException({
+        statusCode: 400,
+        error: 'ValidationFailed',
+        message: 'Validation failed',
+        details: [{ path: 'name', constraints: ['name should not be empty'] }],
+      }),
+      host,
+    );
+
+    expect(captured.status).toBe(HttpStatus.BAD_REQUEST);
+    expect(captured.body.code).toBe('VALIDATION_FAILED');
+    expect(captured.body.message).toBe('Validation failed');
+    expect(captured.body.details).toEqual([
+      { path: 'name', constraints: ['name should not be empty'] },
+    ]);
+  });
+
+  /**
+   * A pipe configured without `validationExceptionFactory` still reports a
+   * bare array of sentences. Kept working so such a failure answers in the
+   * documented shape rather than as a generic 400.
+   */
+  it('still handles a bare array of validation sentences', () => {
     filter.catch(new BadRequestException(['name should not be empty']), host);
 
     expect(captured.status).toBe(HttpStatus.BAD_REQUEST);
-    expect(captured.body.message).toBe('Validation failed');
+    expect(captured.body.code).toBe('VALIDATION_FAILED');
     expect(captured.body.details).toEqual(['name should not be empty']);
   });
 
@@ -94,8 +125,60 @@ describe('AllExceptionsFilter', () => {
 
     expect(captured.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
     expect(captured.body).toMatchObject({
+      code: 'UNMAPPED_DOMAIN',
       error: 'UnmappedDomainError',
       message: 'A business rule refused the operation',
+    });
+  });
+
+  /**
+   * The stable code is the published contract — the client branches and
+   * translates on it, because `message` stays English and is free to be
+   * reworded.
+   */
+  describe('the code on every response body', () => {
+    it('comes off the domain error itself', () => {
+      filter.catch(new DuplicateInvoiceError('4'.repeat(44), 'purchase-1'), host);
+
+      expect(captured.body.code).toBe('DUPLICATE_INVOICE');
+    });
+
+    it('passes a domain error\u2019s typed details straight through', () => {
+      filter.catch(new DetailedDomainError(), host);
+
+      expect(captured.body.code).toBe('DETAILED_DOMAIN');
+      expect(captured.body.details).toEqual({ offending: 'flour', count: 2 });
+    });
+
+    it('omits details entirely for a domain error that carries none', () => {
+      filter.catch(new UnmappedDomainError(), host);
+
+      expect(captured.body).not.toHaveProperty('details');
+    });
+
+    it('derives one from the status for a framework HttpException', () => {
+      filter.catch(new NotFoundException('Material not found'), host);
+
+      expect(captured.body.code).toBe('NOT_FOUND');
+    });
+
+    /** A 500 tells the client nothing actionable; the errorId carries it forward. */
+    it('is a single value for any unexpected failure', () => {
+      filter.catch(new Error('a stack trace nobody should see'), host);
+
+      expect(captured.body.code).toBe('INTERNAL_ERROR');
+      expect(captured.body).not.toHaveProperty('details');
+    });
+
+    it('is SCREAMING_SNAKE_CASE whatever the failure was', () => {
+      for (const exception of [
+        new UnmappedDomainError(),
+        new NotFoundException('nope'),
+        new Error('boom'),
+      ]) {
+        filter.catch(exception, host);
+        expect(captured.body.code).toMatch(/^[A-Z][A-Z0-9_]*$/);
+      }
     });
   });
 

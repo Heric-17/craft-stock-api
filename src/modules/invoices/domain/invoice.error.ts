@@ -5,13 +5,19 @@ import { DomainError } from '../../../shared/domain/errors/domain.error';
  * `Purchase` so the caller can point the user at it instead of creating a
  * second record of the same purchase.
  */
-export class DuplicateInvoiceError extends DomainError {
+export interface DuplicateInvoiceDetails {
+  accessKey: string;
+  existingPurchaseId: string;
+}
+
+export class DuplicateInvoiceError extends DomainError<DuplicateInvoiceDetails> {
   constructor(
     readonly accessKey: string,
     readonly existingPurchaseId: string,
   ) {
     super(
       `Invoice ${accessKey} was already imported as Purchase ${existingPurchaseId}. It was not imported again.`,
+      { accessKey, existingPurchaseId },
     );
   }
 }

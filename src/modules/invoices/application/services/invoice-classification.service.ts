@@ -230,7 +230,7 @@ export class InvoiceClassificationService {
       id: randomUUID(),
       name: line.newMaterial.name,
       description: null,
-      imageUrl: null,
+      imageKey: null,
       // Always the gross side, in every allocation mode.
       packageCost: item.packageCostBasis,
       packageQuantity: line.packageQuantity,

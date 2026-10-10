@@ -5,9 +5,11 @@ import { Injectable } from '@nestjs/common';
 
 import { EnvService } from '../../../config/env.service';
 import { ImageUploadFailedError } from '../../domain/errors/image-upload-failed.error';
+import { UPLOADS_PUBLIC_PATH } from '../../domain/storage/image-delivery';
 import type { StorageProvider, UploadableFile } from '../../domain/storage/storage-provider';
 import { StructuredLogger } from '../logging/structured-logger.service';
 import { buildStorageKey } from './build-storage-key';
+import { resolvePublicBaseUrl } from './public-base-url';
 
 /**
  * Development backend for `StorageProvider`: writes straight to a directory
@@ -56,6 +58,19 @@ export class LocalDiskStorageProvider implements StorageProvider {
         error,
       );
     }
+  }
+
+  /**
+   * The API serves `UPLOADS_DIR` statically under `UPLOADS_PUBLIC_PATH`
+   * (see `configureApp`), so a key resolves against this installation's own
+   * public base. Both halves come from one place each, so the URL handed to
+   * a client and the route that actually serves the bytes cannot drift
+   * apart.
+   */
+  publicUrl(key: string): string {
+    const base = resolvePublicBaseUrl(this.env.get('PUBLIC_BASE_URL'), this.env.get('PORT'));
+
+    return `${base}${UPLOADS_PUBLIC_PATH}/${key}`;
   }
 
   private get rootDir(): string {

@@ -17,6 +17,7 @@ import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.servic
 import type { ErrorResponseBody } from '../src/shared/presentation/filters/all-exceptions.filter';
 import { CORRELATION_ID_HEADER } from '../src/shared/presentation/middleware/request-context.middleware';
 import { authenticate } from './support/authenticate';
+import { configureTestApp } from './support/configure-test-app';
 
 /**
  * A password, a CPF and a token, all planted in the text of a failure on
@@ -131,7 +132,7 @@ function buildMaterial(id: string): Material {
     id,
     name: `Observability Material ${id}`,
     description: null,
-    imageUrl: null,
+    imageKey: null,
     packageCost: Money.fromDecimalString('10.00'),
     packageQuantity: 1_000,
     consumptionUnit: 'GRAM',
@@ -189,6 +190,7 @@ describe('Request failure records (e2e)', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
     server = app.getHttpServer() as Server;
     prisma = moduleRef.get(PrismaService);

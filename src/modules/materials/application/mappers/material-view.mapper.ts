@@ -1,15 +1,21 @@
 import { consumptionUnitSymbol } from '../../domain/consumption-unit';
 import type { Material } from '../../domain/material.entity';
 import type { MaterialPriceHistory } from '../../domain/material-price-history.entity';
+import type { ResolveImageUrl } from '../../../../shared/application/storage/resolve-image-url';
 import type { MaterialPriceHistoryView, MaterialView } from '../dto/materials.dto';
 
 export class MaterialViewMapper {
-  static toView(material: Material): MaterialView {
+  /**
+   * `resolveImageUrl` is passed in rather than reached for: the mapper stays
+   * a pure function of its inputs, and the service — which already holds the
+   * `StorageProvider` factory — decides which backend resolves the key.
+   */
+  static toView(material: Material, resolveImageUrl: ResolveImageUrl): MaterialView {
     return {
       id: material.id,
       name: material.name,
       description: material.description,
-      imageUrl: material.imageUrl,
+      imageUrl: resolveImageUrl(material.imageKey),
       packageCost: material.packageCost.toDecimalString(),
       packageQuantity: material.packageQuantity,
       consumptionUnit: material.consumptionUnit,

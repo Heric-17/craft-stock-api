@@ -12,6 +12,7 @@ describe('validateEnv', () => {
       PORT: 3000,
       LOG_LEVEL: 'info',
       DATABASE_URL: VALID_DATABASE_URL,
+      CORS_ORIGINS: '',
       NFCE_PROVIDER: 'AUTO',
       NFCE_IMPORT_MAX_ATTEMPTS: 3,
       NFCE_IMPORT_RETRY_DELAY_MS: 1_000,
@@ -19,6 +20,7 @@ describe('validateEnv', () => {
       JWT_SECRET: VALID_JWT_SECRET,
       JWT_EXPIRES_IN_SECONDS: 900,
       REFRESH_TOKEN_EXPIRES_IN_SECONDS: 2_592_000,
+      AUTH_COOKIE_SECURE: true,
       ARGON2_TIME_COST: 3,
       AUDIT_LOG_RETENTION_DAYS: 180,
       REQUEST_LOG_RETENTION_DAYS: 30,
@@ -144,9 +146,89 @@ describe('validateEnv', () => {
       JWT_SECRET: VALID_JWT_SECRET,
       STORAGE_PROVIDER: 'S3',
       S3_BUCKET_NAME: 'craftstock-images',
+      S3_PUBLIC_BASE_URL: 'https://images.empresa.com.br',
     });
 
     expect(env.STORAGE_PROVIDER).toBe('S3');
     expect(env.S3_BUCKET_NAME).toBe('craftstock-images');
+  });
+
+  /**
+   * The bucket is public for reads with a fixed URL, so the base it is read
+   * at is configuration, not something to assemble from bucket and region in
+   * code — an installation behind a CDN or a custom domain would make any
+   * assembled value wrong.
+   */
+  it('fails when STORAGE_PROVIDER is S3 without a public base URL', () => {
+    expect(() =>
+      validateEnv({
+        DATABASE_URL: VALID_DATABASE_URL,
+        JWT_SECRET: VALID_JWT_SECRET,
+        STORAGE_PROVIDER: 'S3',
+        S3_BUCKET_NAME: 'craftstock-images',
+      }),
+    ).toThrow(/S3_PUBLIC_BASE_URL/);
+  });
+
+  describe('the SPA edge', () => {
+    const PRODUCTION = {
+      DATABASE_URL: VALID_DATABASE_URL,
+      JWT_SECRET: VALID_JWT_SECRET,
+      NODE_ENV: 'production',
+      CORS_ORIGINS: 'https://app.empresa.com.br',
+      PUBLIC_BASE_URL: 'https://api.empresa.com.br',
+    };
+
+    it('accepts a fully configured production environment', () => {
+      const env = validateEnv(PRODUCTION);
+
+      expect(env.CORS_ORIGINS).toBe('https://app.empresa.com.br');
+      expect(env.PUBLIC_BASE_URL).toBe('https://api.empresa.com.br');
+      expect(env.AUTH_COOKIE_SECURE).toBe(true);
+    });
+
+    /**
+     * Without this the API starts and every browser call fails on the
+     * client side, where the cause is far from obvious. Better to refuse to
+     * boot.
+     */
+    it('requires CORS_ORIGINS in production', () => {
+      expect(() => validateEnv({ ...PRODUCTION, CORS_ORIGINS: '' })).toThrow(/CORS_ORIGINS/);
+    });
+
+    it('requires PUBLIC_BASE_URL in production, rather than defaulting to localhost', () => {
+      expect(() => validateEnv({ ...PRODUCTION, PUBLIC_BASE_URL: undefined })).toThrow(
+        /PUBLIC_BASE_URL/,
+      );
+    });
+
+    it('refuses a non-secure session cookie in production', () => {
+      expect(() => validateEnv({ ...PRODUCTION, AUTH_COOKIE_SECURE: 'false' })).toThrow(
+        /AUTH_COOKIE_SECURE/,
+      );
+    });
+
+    /**
+     * A wildcard cannot be combined with credentials by any browser, so
+     * someone who wrote one is told instead of getting a silently narrower
+     * rule.
+     */
+    it('refuses a wildcard origin', () => {
+      expect(() =>
+        validateEnv({ ...PRODUCTION, CORS_ORIGINS: 'https://app.empresa.com.br,*' }),
+      ).toThrow(/CORS_ORIGINS/);
+    });
+
+    it('leaves all three unset outside production, where there are fallbacks', () => {
+      const env = validateEnv({
+        DATABASE_URL: VALID_DATABASE_URL,
+        JWT_SECRET: VALID_JWT_SECRET,
+        AUTH_COOKIE_SECURE: 'false',
+      });
+
+      expect(env.CORS_ORIGINS).toBe('');
+      expect(env.PUBLIC_BASE_URL).toBeUndefined();
+      expect(env.AUTH_COOKIE_SECURE).toBe(false);
+    });
   });
 });

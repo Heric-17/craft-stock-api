@@ -12,6 +12,7 @@ import {
 import { SalesService } from '../src/modules/sales/application/services/sales.service';
 import { Money } from '../src/shared/domain/money/money';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
+import { configureTestApp } from './support/configure-test-app';
 
 /**
  * Real-Postgres coverage for the frozen price basis of a `SaleItem`.
@@ -37,6 +38,7 @@ describe('SaleItem price basis (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
 
     salesService = moduleRef.get(SalesService);
@@ -64,7 +66,7 @@ describe('SaleItem price basis (e2e)', () => {
       id: randomUUID(),
       name: `Farinha ${randomUUID()}`,
       description: null,
-      imageUrl: null,
+      imageKey: null,
       packageCost: Money.fromDecimalString('28.00'),
       packageQuantity: 1000,
       consumptionUnit: 'GRAM',

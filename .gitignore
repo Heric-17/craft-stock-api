@@ -32,3 +32,6 @@ npm-debug.log*
 !.vscode/extensions.json
 .DS_Store
 Thumbs.db
+
+docs/auth-contract.md
+docs/api-contract.md

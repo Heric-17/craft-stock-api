@@ -35,6 +35,20 @@ function silentLogger(): StructuredLogger {
   return logger;
 }
 
+/**
+ * The view exposes the absolute URL now, so a test that wants to ask storage
+ * about the object has to go back to the key. Checking that the URL really is
+ * the configured base plus the key, rather than trusting whatever the view
+ * says, is also what would catch a resolver that quietly stopped resolving.
+ */
+function storageKeyOf(imageUrl: string | null): string {
+  const prefix = `${InMemoryStorageProvider.PUBLIC_BASE}/`;
+
+  expect(imageUrl).toEqual(expect.stringContaining(prefix));
+
+  return (imageUrl as string).slice(prefix.length);
+}
+
 function buildService(storage: InMemoryStorageProvider = new InMemoryStorageProvider()): {
   service: MaterialsService;
   materials: InMemoryMaterialRepository;
@@ -134,6 +148,51 @@ describe('MaterialsService', () => {
       await expect(service.update('missing-id', { name: 'x' })).rejects.toThrow(
         MaterialNotFoundError,
       );
+    });
+  });
+
+  describe('findById', () => {
+    it('returns the read model of the Material', async () => {
+      const { service } = buildService();
+      const created = await service.create(buildCreateInput({ name: 'Farinha de trigo' }));
+
+      const found = await service.findById(created.id);
+
+      expect(found).toEqual(created);
+    });
+
+    it('derives unitCost and lowStock at read time, like every other read', async () => {
+      const { service } = buildService();
+      const created = await service.create(
+        buildCreateInput({ packageCost: '28.00', packageQuantity: 1000, stockQuantity: 50 }),
+      );
+
+      const found = await service.findById(created.id);
+
+      expect(found.unitCost).toBe('0.0280');
+      expect(found.lowStock).toBe(true);
+    });
+
+    /**
+     * §9: a listing hides discontinued entities by default, but resolving one
+     * by id must still work — a client holding a link to an inactive insumo
+     * has to be able to open it.
+     */
+    it('answers for a discontinued Material too', async () => {
+      const { service } = buildService();
+      const created = await service.create(buildCreateInput());
+      await service.discontinue(created.id);
+
+      const found = await service.findById(created.id);
+
+      expect(found.isActive).toBe(false);
+      expect(found.discontinuedAt).not.toBeNull();
+    });
+
+    it('throws MaterialNotFoundError for an unknown id', async () => {
+      const { service } = buildService();
+
+      await expect(service.findById('missing-id')).rejects.toThrow(MaterialNotFoundError);
     });
   });
 
@@ -464,9 +523,10 @@ describe('MaterialsService', () => {
         mimeType: 'image/png',
       });
 
-      expect(updated.imageUrl).not.toBeNull();
-      expect(updated.imageUrl).not.toMatch(/^https?:\/\//);
-      expect(storage.has(updated.imageUrl as string)).toBe(true);
+      // The view carries the absolute URL; what was stored is the key
+      // inside it, which is what storage knows about.
+      expect(updated.imageUrl).toMatch(/^https?:\/\//);
+      expect(storage.has(storageKeyOf(updated.imageUrl))).toBe(true);
     });
 
     it('deletes the previous image once the new one is saved', async () => {
@@ -477,7 +537,7 @@ describe('MaterialsService', () => {
         buffer: Buffer.from('first'),
         mimeType: 'image/jpeg',
       });
-      const firstKey = first.imageUrl as string;
+      const firstKey = storageKeyOf(first.imageUrl);
 
       const second = await service.setImage(created.id, {
         buffer: Buffer.from('second'),
@@ -485,7 +545,7 @@ describe('MaterialsService', () => {
       });
 
       expect(storage.has(firstKey)).toBe(false);
-      expect(storage.has(second.imageUrl as string)).toBe(true);
+      expect(storage.has(storageKeyOf(second.imageUrl))).toBe(true);
     });
 
     it('throws MaterialNotFoundError for an unknown material', async () => {
@@ -510,16 +570,16 @@ describe('MaterialsService', () => {
         buffer: Buffer.from('first'),
         mimeType: 'image/jpeg',
       });
-      const firstKey = first.imageUrl as string;
+      const firstKey = storageKeyOf(first.imageUrl);
 
       const second = await service.setImage(created.id, {
         buffer: Buffer.from('second'),
         mimeType: 'image/jpeg',
       });
 
-      expect(second.imageUrl).not.toBe(firstKey);
-      expect(storage.has(second.imageUrl as string)).toBe(true);
-      expect((await materials.findById(created.id))?.imageUrl).toBe(second.imageUrl);
+      expect(second.imageUrl).not.toBe(first.imageUrl);
+      expect(storage.has(storageKeyOf(second.imageUrl))).toBe(true);
+      expect((await materials.findById(created.id))?.imageKey).toBe(storageKeyOf(second.imageUrl));
       expect(storage.has(firstKey)).toBe(true);
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining(firstKey),
@@ -530,14 +590,14 @@ describe('MaterialsService', () => {
   });
 
   describe('removeImage', () => {
-    it('deletes the stored image and clears imageUrl', async () => {
+    it('deletes the stored image and clears the key', async () => {
       const { service, storage } = buildService();
       const created = await service.create(buildCreateInput());
       const withImage = await service.setImage(created.id, {
         buffer: Buffer.from('bytes'),
         mimeType: 'image/webp',
       });
-      const key = withImage.imageUrl as string;
+      const key = storageKeyOf(withImage.imageUrl);
 
       const cleared = await service.removeImage(created.id);
 
@@ -554,7 +614,7 @@ describe('MaterialsService', () => {
       expect(cleared.imageUrl).toBeNull();
     });
 
-    it('clears imageUrl even when deleting the stored image fails', async () => {
+    it('clears the key even when deleting the stored image fails', async () => {
       const storage = new DeleteFailingStorageProvider();
       const { service, materials, logger } = buildService(storage);
       const created = await service.create(buildCreateInput());
@@ -562,12 +622,12 @@ describe('MaterialsService', () => {
         buffer: Buffer.from('bytes'),
         mimeType: 'image/webp',
       });
-      const key = withImage.imageUrl as string;
+      const key = storageKeyOf(withImage.imageUrl);
 
       const cleared = await service.removeImage(created.id);
 
       expect(cleared.imageUrl).toBeNull();
-      expect((await materials.findById(created.id))?.imageUrl).toBeNull();
+      expect((await materials.findById(created.id))?.imageKey).toBeNull();
       expect(storage.has(key)).toBe(true);
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining(key),

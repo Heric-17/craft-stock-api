@@ -13,6 +13,7 @@ import type {
 } from '../src/modules/purchases/application/dto/purchases.dto';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
+import { configureTestApp } from './support/configure-test-app';
 
 /**
  * The REST surface of the module, over HTTP, with the application's real
@@ -34,6 +35,7 @@ describe('Purchases API (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
     server = app.getHttpServer() as Server;
     prisma = moduleRef.get(PrismaService);

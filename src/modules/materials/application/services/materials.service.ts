@@ -3,7 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { discardStoredImage } from '../../../../shared/application/storage/discard-stored-image';
-import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
+import {
+  imageUrlResolver,
+  type ResolveImageUrl,
+} from '../../../../shared/application/storage/resolve-image-url';
+import {
+  EntityInUseError,
+  totalReferences,
+} from '../../../../shared/domain/errors/entity-in-use.error';
 import { Money } from '../../../../shared/domain/money/money';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
 import {
@@ -40,6 +47,16 @@ export class MaterialsService {
     private readonly logger: StructuredLogger,
   ) {}
 
+  /**
+   * The function that turns a stored key into an absolute URL on the way
+   * out. Built per call from the configured provider rather than held as
+   * state, matching how `setImage` and `removeImage` already reach for the
+   * factory.
+   */
+  private get resolveImageUrl(): ResolveImageUrl {
+    return imageUrlResolver(this.storageProviderFactory.create());
+  }
+
   async create(input: CreateMaterialInput): Promise<MaterialView> {
     const now = new Date();
     const packageCost = Money.fromDecimalString(input.packageCost);
@@ -48,7 +65,7 @@ export class MaterialsService {
       id: randomUUID(),
       name: input.name,
       description: input.description,
-      imageUrl: null,
+      imageKey: null,
       packageCost,
       packageQuantity: input.packageQuantity,
       consumptionUnit: input.consumptionUnit,
@@ -73,7 +90,7 @@ export class MaterialsService {
       await ctx.materials.addPriceHistoryEntry(priceHistoryEntry);
     });
 
-    return MaterialViewMapper.toView(material);
+    return MaterialViewMapper.toView(material, this.resolveImageUrl);
   }
 
   async update(materialId: string, input: UpdateMaterialInput): Promise<MaterialView> {
@@ -120,7 +137,7 @@ export class MaterialsService {
       }
     });
 
-    return MaterialViewMapper.toView(updated);
+    return MaterialViewMapper.toView(updated, this.resolveImageUrl);
   }
 
   /**
@@ -144,7 +161,21 @@ export class MaterialsService {
       await ctx.materials.save(updated);
     });
 
-    return MaterialViewMapper.toView(updated);
+    return MaterialViewMapper.toView(updated, this.resolveImageUrl);
+  }
+
+  /**
+   * The read model for one `Material`, discontinued or not: a client holding
+   * a link to an inactive insumo still has to be able to open it, and §9 is
+   * explicit that a history lookup resolves the entity whatever its state.
+   * Only the listings filter by default.
+   *
+   * @throws MaterialNotFoundError when no Material has that id.
+   */
+  async findById(materialId: string): Promise<MaterialView> {
+    const material = await this.findByIdOrThrow(materialId);
+
+    return MaterialViewMapper.toView(material, this.resolveImageUrl);
   }
 
   async list(includeDiscontinued = false): Promise<MaterialView[]> {
@@ -152,7 +183,7 @@ export class MaterialsService {
 
     return materials
       .filter((material) => includeDiscontinued || material.isActive)
-      .map((material) => MaterialViewMapper.toView(material));
+      .map((material) => MaterialViewMapper.toView(material, this.resolveImageUrl));
   }
 
   async search(query: string, includeDiscontinued = false): Promise<MaterialView[]> {
@@ -162,7 +193,7 @@ export class MaterialsService {
     return materials
       .filter((material) => includeDiscontinued || material.isActive)
       .filter((material) => normalizeForSearch(material.name).includes(normalizedQuery))
-      .map((material) => MaterialViewMapper.toView(material));
+      .map((material) => MaterialViewMapper.toView(material, this.resolveImageUrl));
   }
 
   async registerStockEntry(materialId: string, input: StockEntryInput): Promise<MaterialView> {
@@ -196,13 +227,13 @@ export class MaterialsService {
       }
     });
 
-    return MaterialViewMapper.toView(updated);
+    return MaterialViewMapper.toView(updated, this.resolveImageUrl);
   }
 
   /**
    * Uploads via the currently selected `StorageProvider` before touching the
    * database, and deletes the previous image only after the new key is
-   * saved — so a failure at either step never leaves `imageUrl` pointing at
+   * saved — so a failure at either step never leaves `imageKey` pointing at
    * nothing, and at worst leaves an orphaned object in storage rather than a
    * dangling reference.
    */
@@ -211,38 +242,38 @@ export class MaterialsService {
     const current = await this.findByIdOrThrow(materialId);
     const provider = this.storageProviderFactory.create();
     const newKey = await provider.upload(file);
-    const updated = current.update({ imageUrl: newKey }, now);
+    const updated = current.update({ imageKey: newKey }, now);
 
     await this.unitOfWork.runInTransaction(async (ctx) => {
       await ctx.materials.save(updated);
     });
 
-    if (current.imageUrl !== null) {
-      await discardStoredImage(provider, current.imageUrl, this.logger, MaterialsService.name);
+    if (current.imageKey !== null) {
+      await discardStoredImage(provider, current.imageKey, this.logger, MaterialsService.name);
     }
 
-    return MaterialViewMapper.toView(updated);
+    return MaterialViewMapper.toView(updated, this.resolveImageUrl);
   }
 
   async removeImage(materialId: string): Promise<MaterialView> {
     const now = new Date();
     const current = await this.findByIdOrThrow(materialId);
-    const updated = current.update({ imageUrl: null }, now);
+    const updated = current.update({ imageKey: null }, now);
 
     await this.unitOfWork.runInTransaction(async (ctx) => {
       await ctx.materials.save(updated);
     });
 
-    if (current.imageUrl !== null) {
+    if (current.imageKey !== null) {
       await discardStoredImage(
         this.storageProviderFactory.create(),
-        current.imageUrl,
+        current.imageKey,
         this.logger,
         MaterialsService.name,
       );
     }
 
-    return MaterialViewMapper.toView(updated);
+    return MaterialViewMapper.toView(updated, this.resolveImageUrl);
   }
 
   async getPriceHistory(materialId: string): Promise<MaterialPriceHistoryView[]> {
@@ -253,10 +284,10 @@ export class MaterialsService {
 
   async delete(materialId: string): Promise<void> {
     await this.findByIdOrThrow(materialId);
-    const referenceCount = await this.materials.countReferences(materialId);
+    const references = await this.materials.countReferences(materialId);
 
-    if (referenceCount > 0) {
-      throw new EntityInUseError('Material', materialId, referenceCount);
+    if (totalReferences(references) > 0) {
+      throw new EntityInUseError('Material', materialId, references);
     }
 
     await this.unitOfWork.runInTransaction(async (ctx) => {
@@ -273,7 +304,7 @@ export class MaterialsService {
       await ctx.materials.save(updated);
     });
 
-    return MaterialViewMapper.toView(updated);
+    return MaterialViewMapper.toView(updated, this.resolveImageUrl);
   }
 
   async reactivate(materialId: string): Promise<MaterialView> {
@@ -285,7 +316,7 @@ export class MaterialsService {
       await ctx.materials.save(updated);
     });
 
-    return MaterialViewMapper.toView(updated);
+    return MaterialViewMapper.toView(updated, this.resolveImageUrl);
   }
 
   private resolveNewStockQuantity(currentQuantity: number, input: StockEntryInput): number {

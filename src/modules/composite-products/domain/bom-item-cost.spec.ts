@@ -12,7 +12,7 @@ function material(packageCost: string, packageQuantity: number): Material {
     id: randomUUID(),
     name: 'Insumo',
     description: null,
-    imageUrl: null,
+    imageKey: null,
     packageCost: Money.fromDecimalString(packageCost),
     packageQuantity,
     consumptionUnit: 'GRAM',

@@ -15,6 +15,7 @@ import { SalesModule } from './modules/sales/sales.module';
 import { UsersModule } from './modules/users/users.module';
 import { AllExceptionsFilter } from './shared/presentation/filters/all-exceptions.filter';
 import { RequestContextMiddleware } from './shared/presentation/middleware/request-context.middleware';
+import { validationExceptionFactory } from './shared/presentation/http/validation-error-details';
 import { LoggingModule } from './shared/infrastructure/logging/logging.module';
 import { NotificationsModule } from './shared/infrastructure/notifications/notifications.module';
 import { PrismaModule } from './shared/infrastructure/prisma/prisma.module';
@@ -51,6 +52,10 @@ import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-wo
         forbidNonWhitelisted: true,
         transform: true,
         transformOptions: { enableImplicitConversion: false },
+        // Replaces the default array of sentences with one entry per
+        // offending field, carrying the path to it — so a client marks the
+        // field instead of parsing the field name out of English prose.
+        exceptionFactory: validationExceptionFactory,
       }),
     },
     {

@@ -10,6 +10,7 @@ import {
 } from '../../domain/composite-product-pricing';
 import type { CompositeProduct } from '../../domain/composite-product.entity';
 import { calculateProductionCapacity } from '../../domain/production-capacity';
+import type { ResolveImageUrl } from '../../../../shared/application/storage/resolve-image-url';
 import type { BomItemView, CompositeProductView } from '../dto/composite-products.dto';
 
 export class CompositeProductViewMapper {
@@ -23,6 +24,7 @@ export class CompositeProductViewMapper {
     product: CompositeProduct,
     billOfMaterials: BillOfMaterials,
     materialsById: ReadonlyMap<string, Material>,
+    resolveImageUrl: ResolveImageUrl,
   ): CompositeProductView {
     const items = billOfMaterials.items.map((item) => ({
       item,
@@ -80,7 +82,7 @@ export class CompositeProductViewMapper {
       id: product.id,
       name: product.name,
       description: product.description,
-      imageUrl: product.imageUrl,
+      imageUrl: resolveImageUrl(product.imageKey),
       fixedOperationalCost: product.fixedOperationalCost.toDecimalString(),
       profitMargin: product.profitMargin,
       manualPrice: product.manualPrice?.toDecimalString() ?? null,

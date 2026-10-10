@@ -27,6 +27,7 @@ import {
 } from '../src/modules/purchases/domain/repositories/purchase.repository';
 import { PurchaseAnalyticsService } from '../src/modules/purchases/application/services/purchase-analytics.service';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
+import { configureTestApp } from './support/configure-test-app';
 
 const FIXTURES = join(__dirname, 'fixtures', 'nfce');
 
@@ -91,6 +92,7 @@ describe('NFC-e import (e2e)', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
 
     imports = moduleRef.get(InvoiceImportFacade);

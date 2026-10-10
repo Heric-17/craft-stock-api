@@ -3,10 +3,16 @@ export interface LoginInput {
   password: string;
 }
 
-export interface LoginResult {
+export interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
+}
+export interface SessionResult {
   accessToken: string;
   tokenType: 'Bearer';
   expiresInSeconds: number;
-  /** Raw value, returned once. Only its hash is ever persisted. */
+  user: SessionUser;
   refreshToken: string;
 }
+export type SessionResponse = Omit<SessionResult, 'refreshToken'>;

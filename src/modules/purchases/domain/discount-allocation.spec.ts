@@ -216,6 +216,139 @@ describe('allocateDiscount', () => {
       DiscountAllocationError,
     );
   });
+
+  /**
+   * The refusals above are all one `code`, so what tells the screen which
+   * rule broke — and which numbers to show the user — is the payload. The
+   * amounts travel as decimal strings, never as JSON numbers: showing
+   * someone the figure that did not add up is the whole purpose, and a float
+   * would corrupt it on the way out.
+   */
+  describe('the refusal it reports', () => {
+    function refusalOf(run: () => unknown): DiscountAllocationError {
+      try {
+        run();
+      } catch (error) {
+        return error as DiscountAllocationError;
+      }
+
+      throw new Error('allocateDiscount was expected to throw.');
+    }
+
+    it('reports a manual sum that does not close, with both figures', () => {
+      const error = refusalOf(() =>
+        allocateDiscount(
+          [line('a', '20.00'), line('b', '100.00')],
+          money('15.00'),
+          'MANUAL',
+          new Map([
+            ['a', money('2.00')],
+            ['b', money('12.00')],
+          ]),
+        ),
+      );
+
+      expect(error.code).toBe('DISCOUNT_ALLOCATION');
+      expect(error.details).toEqual({
+        reason: 'SUM_MISMATCH',
+        expected: '15.00',
+        provided: '14.00',
+        mode: 'MANUAL',
+      });
+    });
+
+    it('reports which line took more than it is worth, and its ceiling', () => {
+      const error = refusalOf(() =>
+        allocateDiscount(
+          [line('a', '20.00'), line('b', '100.00')],
+          money('50.00'),
+          'MANUAL',
+          new Map([
+            ['a', money('50.00')],
+            ['b', money('0.00')],
+          ]),
+        ),
+      );
+
+      expect(error.details).toEqual({
+        reason: 'LINE_EXCEEDS_GROSS',
+        itemId: 'a',
+        expected: '20.00',
+        provided: '50.00',
+        mode: 'MANUAL',
+      });
+    });
+
+    it('reports a mode with no eligible line, naming the mode', () => {
+      const error = refusalOf(() =>
+        allocateDiscount([line('wine', '100.00', false)], money('10.00'), 'COMPANY_ONLY'),
+      );
+
+      expect(error.details).toEqual({
+        reason: 'NO_ELIGIBLE_LINE',
+        mode: 'COMPANY_ONLY',
+        expected: '10.00',
+      });
+    });
+
+    it('reports a discount larger than the lines it would come off', () => {
+      const error = refusalOf(() =>
+        allocateDiscount([line('a', '10.00', true)], money('50.00'), 'COMPANY_ONLY'),
+      );
+
+      expect(error.details).toEqual({
+        reason: 'DISCOUNT_EXCEEDS_GROSS',
+        mode: 'COMPANY_ONLY',
+        expected: '10.00',
+        provided: '50.00',
+      });
+    });
+
+    it('reports MANUAL chosen with no amounts at all', () => {
+      const error = refusalOf(() =>
+        allocateDiscount([line('a', '20.00')], money('5.00'), 'MANUAL'),
+      );
+
+      expect(error.details).toMatchObject({ reason: 'MANUAL_INPUT_MISSING', mode: 'MANUAL' });
+    });
+
+    it('reports a negative amount typed for a line', () => {
+      const error = refusalOf(() =>
+        allocateDiscount(
+          [line('a', '20.00')],
+          money('5.00'),
+          'MANUAL',
+          new Map([['a', money('-1.00')]]),
+        ),
+      );
+
+      expect(error.details).toMatchObject({ reason: 'NEGATIVE_LINE_AMOUNT', itemId: 'a' });
+    });
+
+    it('reports a negative discount on the note itself', () => {
+      const error = refusalOf(() =>
+        allocateDiscount([line('a', '20.00')], money('-5.00'), 'PROPORTIONAL'),
+      );
+
+      expect(error.details).toMatchObject({ reason: 'NEGATIVE_DISCOUNT_TOTAL' });
+    });
+
+    it('reports a discount with no line to carry it', () => {
+      const error = refusalOf(() => allocateDiscount([], money('5.00'), 'PROPORTIONAL'));
+
+      expect(error.details).toEqual({ reason: 'NO_LINES', expected: '5.00' });
+    });
+
+    /** Every amount in the payload is a decimal string, per §8.1. */
+    it('never puts a JSON number where money belongs', () => {
+      const error = refusalOf(() =>
+        allocateDiscount([line('a', '10.00', true)], money('50.00'), 'COMPANY_ONLY'),
+      );
+
+      expect(typeof error.details?.expected).toBe('string');
+      expect(typeof error.details?.provided).toBe('string');
+    });
+  });
 });
 
 describe('eligibleLines', () => {

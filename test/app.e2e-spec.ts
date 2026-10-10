@@ -6,6 +6,7 @@ import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { CORRELATION_ID_HEADER } from '../src/shared/presentation/middleware/request-context.middleware';
+import { configureTestApp } from './support/configure-test-app';
 
 interface HealthBody {
   status: string;
@@ -31,6 +32,7 @@ describe('Application (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
     server = app.getHttpServer() as Server;
   });

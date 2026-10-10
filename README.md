@@ -44,12 +44,30 @@ curl -X POST http://localhost:3000/auth/login \
   -d '{"email":"admin@craftstock.dev","password":"senha-forte-123"}'
 ```
 
-A resposta traz `accessToken` (15 min) e `refreshToken` (30 dias, rotacionado a cada uso
-em `POST /auth/refresh`). Rotas de negócio usam o access token:
+A resposta traz `accessToken` (15 min), sua validade em segundos e o usuário. **O refresh
+token não vem no corpo**: ele é gravado num cookie `HttpOnly` que o JavaScript da página
+não consegue ler, restrito ao path das rotas de auth, com 30 dias de validade e
+rotacionado a cada `POST /auth/refresh`. Por isso o `curl` acima precisa de `-c` para
+guardar o cookie se você quiser testar o refresh na mão:
+
+```bash
+curl -c cookies.txt -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@craftstock.dev","password":"senha-forte-123"}'
+
+curl -b cookies.txt -c cookies.txt -X POST http://localhost:3000/auth/refresh
+```
+
+Rotas de negócio continuam usando o access token, e **não dependem de cookie**:
 
 ```bash
 curl http://localhost:3000/materials -H "Authorization: Bearer <accessToken>"
 ```
+
+O contrato completo da sessão — atributos do cookie, por que cada instalação exige
+domínio próprio, e por que não há token anti-CSRF — está em
+[docs/auth-contract.md](docs/auth-contract.md). A forma das respostas de erro e a tabela
+de códigos estão em [docs/api-contract.md](docs/api-contract.md).
 
 Para mudar as credenciais do seed: `SEED_USER_EMAIL`, `SEED_USER_PASSWORD`,
 `SEED_USER_NAME`, antes de `prisma:migrate` ou `prisma:seed`.
@@ -90,13 +108,25 @@ opção que depende delas é escolhida.
 | `LOG_LEVEL` | não | `info` | `error` \| `warn` \| `info` \| `debug` \| `verbose` |
 | `POSTGRES_PORT` | não | `5432` | Porta publicada pelo docker-compose. Só o compose lê |
 
+**Cliente de navegador (SPA)**
+
+| Variável | Obrigatória | Padrão | Descrição |
+| --- | --- | --- | --- |
+| `CORS_ORIGINS` | **em produção** | vazia | Origens do frontend, separadas por vírgula. Curinga é recusado. Vazia em desenvolvimento cai no servidor do Vite |
+| `PUBLIC_BASE_URL` | **em produção** | vazia | Base absoluta desta API; é contra ela que a URL de imagem local é montada. Vazia em desenvolvimento cai em `http://localhost:<PORT>` |
+
+As duas **impedem a inicialização** se faltarem em produção. É proposital: uma API sem
+`CORS_ORIGINS` responde a `curl` e falha em todo navegador, sem nada no log do servidor
+explicando. Ver [docs/DEPLOY.md](docs/DEPLOY.md).
+
 **Autenticação**
 
 | Variável | Obrigatória | Padrão | Descrição |
 | --- | --- | --- | --- |
 | `JWT_SECRET` | sim | — | Chave HMAC dos JWT de sessão, mínimo 32 caracteres |
 | `JWT_EXPIRES_IN_SECONDS` | não | `900` | Validade do access token |
-| `REFRESH_TOKEN_EXPIRES_IN_SECONDS` | não | `2592000` | Validade do refresh token (30 dias) |
+| `REFRESH_TOKEN_EXPIRES_IN_SECONDS` | não | `2592000` | Validade do refresh token (30 dias), e `Max-Age` do cookie |
+| `AUTH_COOKIE_SECURE` | não | `true` | `Secure` no cookie de sessão. `false` só em desenvolvimento — o Safari descarta cookie `Secure` em `http://localhost`. Recusado em produção |
 | `ARGON2_TIME_COST` | não | `3` | Iterações do argon2, de 1 a 10 |
 
 **Importação de NFC-e**
@@ -117,6 +147,7 @@ opção que depende delas é escolhida.
 | `MAX_IMAGE_UPLOAD_SIZE_BYTES` | não | `5242880` | Teto do upload em bytes |
 | `S3_BUCKET_NAME` | só com `S3` | — | Bucket |
 | `S3_REGION` | não | `us-east-1` | Região do bucket |
+| `S3_PUBLIC_BASE_URL` | só com `S3` | — | Base pública de leitura do bucket. Nunca montada em código: a instalação pode estar atrás de CDN ou domínio próprio |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | só com `S3` | — | Lidas pela cadeia padrão do SDK da AWS, não pelo `EnvService` |
 
 **Observabilidade e retenção**
@@ -142,6 +173,10 @@ scripts, não pela aplicação — ver [docs/RECOVERY.md](docs/RECOVERY.md).
 Processo de publicação independente de provedor: funciona do mesmo jeito num VPS com
 `docker run`, em `docker compose`, ou em qualquer plataforma de contêiner gerenciada —
 sem nenhum arquivo de configuração específico de provedor neste repositório.
+
+Esta seção cobre o contêiner, as migrations e a verificação. O que só aparece quando um
+navegador passa a consumir a API — domínio, CORS, e a política do bucket de imagens —
+está em [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ### Pré-requisitos
 
@@ -284,6 +319,9 @@ inatividade, o que atrasa a primeira requisição depois de um período ocioso.
 ```
 Dockerfile                      imagem de produção (multi-estágio, usuário não root,
                                 entrypoint aplica a migration e só então inicia a API)
+docs/api-contract.md            forma das respostas de erro, códigos e rotas de sessão
+docs/auth-contract.md           transporte da sessão, cookie e decisões de segurança
+docs/DEPLOY.md                  domínio, CORS e política do bucket de imagens
 docs/RECOVERY.md                cópia de segurança e restauração do banco
 scripts/backup/                scripts de dump e restore do PostgreSQL
 prisma.config.ts                configuração do CLI do Prisma (inclui DATABASE_URL e o seed)

@@ -18,6 +18,7 @@ import { PurchaseEditingService } from '../src/modules/purchases/application/ser
 import { PurchasesService } from '../src/modules/purchases/application/services/purchases.service';
 import { Money } from '../src/shared/domain/money/money';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
+import { configureTestApp } from './support/configure-test-app';
 
 /**
  * Real-Postgres integration coverage for the cost/discount policy and for the
@@ -52,6 +53,7 @@ describe('Purchase spending and discount policy (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
 
     purchases = moduleRef.get(PurchasesService);
@@ -80,7 +82,7 @@ describe('Purchase spending and discount policy (e2e)', () => {
       id: randomUUID(),
       name: `Farinha ${randomUUID()}`,
       description: null,
-      imageUrl: null,
+      imageKey: null,
       packageCost: Money.fromDecimalString(packageCost),
       packageQuantity: 1000,
       consumptionUnit: 'GRAM',

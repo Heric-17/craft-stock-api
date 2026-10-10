@@ -7,7 +7,7 @@ function buildProps(overrides: Partial<MaterialProps> = {}): MaterialProps {
     id: 'material-1',
     name: 'Farinha de trigo',
     description: null,
-    imageUrl: null,
+    imageKey: null,
     packageCost: Money.fromDecimalString('10.00'),
     packageQuantity: 1000,
     consumptionUnit: 'GRAM',
@@ -297,6 +297,64 @@ describe('Material', () => {
       expect(() =>
         material.changeConsumptionUnit('GRAM', { bomItemReferences: 1 }, updatedAt),
       ).toThrow(ConsumptionUnitLockedError);
+    });
+
+    /**
+     * The two refusals look alike in the message and are not alike at all to
+     * the person reading the screen: one is fixed by zeroing the stock, the
+     * other by removing recipe lines. The payload is what tells them apart,
+     * so it is asserted rather than left to the prose.
+     */
+    describe('the refusal it reports', () => {
+      function lockDetails(material: Material, usage: { bomItemReferences: number }) {
+        try {
+          material.changeConsumptionUnit('GRAM', usage, updatedAt);
+        } catch (error) {
+          return error as ConsumptionUnitLockedError;
+        }
+
+        throw new Error('changeConsumptionUnit was expected to throw.');
+      }
+
+      it('distinguishes stock on hand', () => {
+        const material = new Material(buildProps({ consumptionUnit: 'UNIT', stockQuantity: 500 }));
+
+        const error = lockDetails(material, NO_USAGE);
+
+        expect(error.code).toBe('CONSUMPTION_UNIT_LOCKED');
+        expect(error.details).toEqual({
+          materialId: material.id,
+          reason: 'STOCK_ON_HAND',
+          stockQuantity: 500,
+          bomItemReferences: 0,
+        });
+      });
+
+      it('distinguishes use in a bill of materials, and says how many lines', () => {
+        const material = new Material(buildProps({ consumptionUnit: 'UNIT', stockQuantity: 0 }));
+
+        const error = lockDetails(material, { bomItemReferences: 3 });
+
+        expect(error.code).toBe('CONSUMPTION_UNIT_LOCKED');
+        expect(error.details).toEqual({
+          materialId: material.id,
+          reason: 'BOM_REFERENCES',
+          stockQuantity: 0,
+          bomItemReferences: 3,
+        });
+      });
+
+      /** Stock is checked first, so that is the reason reported. */
+      it('reports stock when both conditions hold at once', () => {
+        const material = new Material(buildProps({ consumptionUnit: 'UNIT', stockQuantity: 10 }));
+
+        const error = lockDetails(material, { bomItemReferences: 2 });
+
+        expect(error.details?.reason).toBe('STOCK_ON_HAND');
+        // Both counts travel either way, so the screen can mention the
+        // recipes it will also have to deal with.
+        expect(error.details?.bomItemReferences).toBe(2);
+      });
     });
 
     /** Nothing changes meaning, so nothing is in the way. */

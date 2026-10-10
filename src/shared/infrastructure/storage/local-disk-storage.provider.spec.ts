@@ -21,8 +21,23 @@ async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
   }
 }
 
-function buildProvider(dir: string): LocalDiskStorageProvider {
-  const env = { get: () => dir } as unknown as EnvService;
+interface ProviderEnv {
+  uploadsDir: string;
+  publicBaseUrl?: string;
+  port?: number;
+}
+
+function buildProvider(
+  dir: string,
+  overrides: Partial<ProviderEnv> = {},
+): LocalDiskStorageProvider {
+  const values: Record<string, unknown> = {
+    UPLOADS_DIR: dir,
+    PUBLIC_BASE_URL: overrides.publicBaseUrl,
+    PORT: overrides.port ?? 3000,
+  };
+  const env = { get: (key: string) => values[key] } as unknown as EnvService;
+
   return new LocalDiskStorageProvider(env, SILENT_LOGGER);
 }
 
@@ -77,6 +92,47 @@ describe('LocalDiskStorageProvider', () => {
       await expect(
         provider.upload({ buffer: Buffer.from('x'), mimeType: 'application/pdf' }),
       ).rejects.toThrow(UnsupportedImageMimeTypeError);
+    });
+  });
+
+  describe('publicUrl', () => {
+    // No temp directory here: resolving a key touches no filesystem, which
+    // is itself part of the contract — a view mapper calls this per row.
+    it('resolves a key against the configured public base and the static mount', () => {
+      const provider = buildProvider('unused', { publicBaseUrl: 'https://api.empresa.com.br' });
+
+      expect(provider.publicUrl('abc.png')).toBe('https://api.empresa.com.br/uploads/abc.png');
+    });
+
+    it('tolerates a trailing slash on the configured base', () => {
+      const provider = buildProvider('unused', { publicBaseUrl: 'https://api.empresa.com.br/' });
+
+      expect(provider.publicUrl('abc.png')).toBe('https://api.empresa.com.br/uploads/abc.png');
+    });
+
+    it('falls back to loopback on the configured port in development', () => {
+      const provider = buildProvider('unused', { port: 4000 });
+
+      expect(provider.publicUrl('abc.png')).toBe('http://localhost:4000/uploads/abc.png');
+    });
+
+    /**
+     * The bucket and this mount are both public, so what keeps an image from
+     * being enumerated is only that its key is an unguessable UUID. A URL
+     * that leaked any part of the uploaded file name would undo that.
+     */
+    it('builds the URL from the generated key alone, never the uploaded file name', async () => {
+      await withTempDir(async (dir) => {
+        const provider = buildProvider(dir, { publicBaseUrl: 'https://api.empresa.com.br' });
+
+        const key = await provider.upload({
+          buffer: Buffer.from('bytes'),
+          mimeType: 'image/jpeg',
+        });
+
+        expect(key).toMatch(UUID_JPG);
+        expect(provider.publicUrl(key)).toBe(`https://api.empresa.com.br/uploads/${key}`);
+      });
     });
   });
 });

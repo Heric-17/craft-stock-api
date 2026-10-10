@@ -7,11 +7,13 @@ import { sign } from 'jsonwebtoken';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
-import type { LoginResult } from '../src/modules/auth/application/dto/auth.dto';
+import type { SessionResponse } from '../src/modules/auth/application/dto/auth.dto';
 import { hashRefreshToken } from '../src/modules/auth/domain/refresh-token-hash';
 import { EnvService } from '../src/config/env.service';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
+import { configureTestApp } from './support/configure-test-app';
+import { refreshCookieHeader, requireRefreshToken } from './support/refresh-cookie';
 
 interface ErrorBody {
   statusCode: number;
@@ -66,6 +68,7 @@ describe('Authentication (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
     server = app.getHttpServer() as Server;
     prisma = moduleRef.get(PrismaService);
@@ -119,7 +122,7 @@ describe('Authentication (e2e)', () => {
   });
 
   describe('POST /auth/login', () => {
-    it('logs in with a valid email and password, issuing an access and a refresh token', async () => {
+    it('logs in with a valid email and password, issuing an access token and the session cookie', async () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
 
@@ -128,11 +131,15 @@ describe('Authentication (e2e)', () => {
         .send({ email, password })
         .expect(HttpStatus.OK);
 
-      const body = response.body as LoginResult;
+      const body = response.body as SessionResponse;
       expect(typeof body.accessToken).toBe('string');
-      expect(typeof body.refreshToken).toBe('string');
       expect(body.tokenType).toBe('Bearer');
       expect(body.expiresInSeconds).toBeGreaterThan(0);
+      expect(body.user).toMatchObject({ email, name: 'Heric' });
+      // The refresh token travels in the cookie now, never in the body —
+      // test/auth-cookie.e2e-spec.ts covers its attributes in detail.
+      expect(response.body).not.toHaveProperty('refreshToken');
+      expect(requireRefreshToken(response)).toEqual(expect.any(String));
     });
 
     it('refuses an incorrect password, with 401', async () => {
@@ -166,40 +173,43 @@ describe('Authentication (e2e)', () => {
   });
 
   describe('POST /auth/refresh', () => {
-    it('trades a valid refresh token for a new access and refresh token', async () => {
+    it('trades a valid refresh token for a new access token and a new cookie', async () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
       const login = await request(server).post('/auth/login').send({ email, password });
-      const { refreshToken } = login.body as LoginResult;
+      const refreshToken = requireRefreshToken(login);
 
       const response = await request(server)
         .post('/auth/refresh')
-        .send({ refreshToken })
+        .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.OK);
 
-      const body = response.body as LoginResult;
+      const body = response.body as SessionResponse;
       expect(typeof body.accessToken).toBe('string');
-      expect(body.refreshToken).not.toBe(refreshToken);
+      expect(requireRefreshToken(response)).not.toBe(refreshToken);
     });
 
     it('rotates: the same refresh token cannot be used twice, with 401', async () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
       const login = await request(server).post('/auth/login').send({ email, password });
-      const { refreshToken } = login.body as LoginResult;
-
-      await request(server).post('/auth/refresh').send({ refreshToken }).expect(HttpStatus.OK);
+      const refreshToken = requireRefreshToken(login);
 
       await request(server)
         .post('/auth/refresh')
-        .send({ refreshToken })
+        .set('Cookie', refreshCookieHeader(refreshToken))
+        .expect(HttpStatus.OK);
+
+      await request(server)
+        .post('/auth/refresh')
+        .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.UNAUTHORIZED);
     });
 
     it('refuses a refresh token that was never issued, with 401', async () => {
       await request(server)
         .post('/auth/refresh')
-        .send({ refreshToken: 'not-a-real-refresh-token' })
+        .set('Cookie', refreshCookieHeader('not-a-real-refresh-token'))
         .expect(HttpStatus.UNAUTHORIZED);
     });
 
@@ -207,7 +217,7 @@ describe('Authentication (e2e)', () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
       const login = await request(server).post('/auth/login').send({ email, password });
-      const { refreshToken } = login.body as LoginResult;
+      const refreshToken = requireRefreshToken(login);
 
       await prisma.refreshToken.update({
         where: { tokenHash: hashRefreshToken(refreshToken) },
@@ -216,7 +226,7 @@ describe('Authentication (e2e)', () => {
 
       await request(server)
         .post('/auth/refresh')
-        .send({ refreshToken })
+        .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.UNAUTHORIZED);
     });
 
@@ -225,7 +235,7 @@ describe('Authentication (e2e)', () => {
       // that is the whole reason it is here.
       await request(server)
         .post('/auth/refresh')
-        .send({ refreshToken: 'irrelevant' })
+        .set('Cookie', refreshCookieHeader('irrelevant'))
         .expect(HttpStatus.UNAUTHORIZED); // rejected for being invalid, not for missing auth
     });
   });
@@ -235,24 +245,28 @@ describe('Authentication (e2e)', () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
       const login = await request(server).post('/auth/login').send({ email, password });
-      const { refreshToken } = login.body as LoginResult;
+      const refreshToken = requireRefreshToken(login);
 
       await request(server)
         .post('/auth/logout')
-        .send({ refreshToken })
+        .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.NO_CONTENT);
 
       await request(server)
         .post('/auth/refresh')
-        .send({ refreshToken })
+        .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.UNAUTHORIZED);
     });
 
     it('is idempotent for a token that does not exist', async () => {
       await request(server)
         .post('/auth/logout')
-        .send({ refreshToken: 'not-a-real-refresh-token' })
+        .set('Cookie', refreshCookieHeader('not-a-real-refresh-token'))
         .expect(HttpStatus.NO_CONTENT);
+    });
+
+    it('is idempotent with no cookie at all, so a client can always reach a logged-out state', async () => {
+      await request(server).post('/auth/logout').expect(HttpStatus.NO_CONTENT);
     });
   });
 
@@ -262,7 +276,7 @@ describe('Authentication (e2e)', () => {
       await registerAndTrack(email);
 
       const login = await request(server).post('/auth/login').send({ email, password });
-      const { accessToken } = login.body as LoginResult;
+      const { accessToken } = login.body as SessionResponse;
 
       const response = await request(server)
         .get('/users/me')

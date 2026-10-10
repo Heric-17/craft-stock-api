@@ -7,7 +7,7 @@ export interface MaterialProps {
   id: string;
   name: string;
   description: string | null;
-  imageUrl: string | null;
+  imageKey: string | null;
   /** Cost of the whole purchased package, e.g. R$ 12.90 for a 1kg bag of flour. */
   packageCost: Money;
   /** Quantity in the purchased package, in the unit the Material is consumed by. */
@@ -36,7 +36,7 @@ export class Material {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
-  readonly imageUrl: string | null;
+  readonly imageKey: string | null;
   readonly packageCost: Money;
   readonly packageQuantity: number;
   readonly consumptionUnit: ConsumptionUnit;
@@ -72,7 +72,7 @@ export class Material {
     this.id = props.id;
     this.name = props.name;
     this.description = props.description;
-    this.imageUrl = props.imageUrl;
+    this.imageKey = props.imageKey;
     this.packageCost = props.packageCost;
     this.packageQuantity = props.packageQuantity;
     this.consumptionUnit = props.consumptionUnit;
@@ -176,12 +176,24 @@ export class Material {
     if (this.stockQuantity > 0) {
       throw new ConsumptionUnitLockedError(
         `Material ${this.id} holds ${this.stockQuantity} in stock, measured in ${this.consumptionUnit}. Zero the stock before changing its consumption unit.`,
+        {
+          materialId: this.id,
+          reason: 'STOCK_ON_HAND',
+          stockQuantity: this.stockQuantity,
+          bomItemReferences: usage.bomItemReferences,
+        },
       );
     }
 
     if (usage.bomItemReferences > 0) {
       throw new ConsumptionUnitLockedError(
         `Material ${this.id} is used by ${usage.bomItemReferences} BillOfMaterials line(s), whose quantities are expressed in ${this.consumptionUnit}. Remove them before changing its consumption unit.`,
+        {
+          materialId: this.id,
+          reason: 'BOM_REFERENCES',
+          stockQuantity: this.stockQuantity,
+          bomItemReferences: usage.bomItemReferences,
+        },
       );
     }
 
@@ -232,7 +244,7 @@ export class Material {
       id: this.id,
       name: this.name,
       description: this.description,
-      imageUrl: this.imageUrl,
+      imageKey: this.imageKey,
       packageCost: this.packageCost,
       packageQuantity: this.packageQuantity,
       consumptionUnit: this.consumptionUnit,

@@ -5,7 +5,7 @@ export interface CompositeProductProps {
   id: string;
   name: string;
   description: string | null;
-  imageUrl: string | null;
+  imageKey: string | null;
   /** Fixed assembly cost (packaging, finishing) added on top of material cost. */
   fixedOperationalCost: Money;
   /** Desired profit margin, as a percentage (e.g. 35 for 35%). */
@@ -21,7 +21,7 @@ export class CompositeProduct {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
-  readonly imageUrl: string | null;
+  readonly imageKey: string | null;
   readonly fixedOperationalCost: Money;
   readonly profitMargin: number;
   readonly manualPrice: Money | null;
@@ -43,7 +43,7 @@ export class CompositeProduct {
     this.id = props.id;
     this.name = props.name;
     this.description = props.description;
-    this.imageUrl = props.imageUrl;
+    this.imageKey = props.imageKey;
     this.fixedOperationalCost = props.fixedOperationalCost;
     this.profitMargin = props.profitMargin;
     this.manualPrice = props.manualPrice;
@@ -87,7 +87,7 @@ export class CompositeProduct {
       id: this.id,
       name: this.name,
       description: this.description,
-      imageUrl: this.imageUrl,
+      imageKey: this.imageKey,
       fixedOperationalCost: this.fixedOperationalCost,
       profitMargin: this.profitMargin,
       manualPrice: this.manualPrice,

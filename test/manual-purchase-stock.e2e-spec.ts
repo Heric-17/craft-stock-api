@@ -13,6 +13,7 @@ import {
 import type { PurchaseView } from '../src/modules/purchases/application/dto/purchases.dto';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
+import { configureTestApp } from './support/configure-test-app';
 
 /**
  * A purchase typed in by hand becomes stock through the same classification
@@ -42,6 +43,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
     server = app.getHttpServer() as Server;
     materials = moduleRef.get(MATERIAL_REPOSITORY);

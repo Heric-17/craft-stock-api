@@ -12,11 +12,12 @@ import {
   PASSWORD_HASHER,
   type PasswordHasher,
 } from '../../../../shared/domain/security/password-hasher.port';
+import type { User } from '../../../users/domain/user.entity';
 import { InvalidCredentialsError, InvalidRefreshTokenError } from '../../domain/auth.error';
 import { TOKEN_PROVIDER, type TokenProvider } from '../../domain/ports/token-provider.port';
 import { hashRefreshToken } from '../../domain/refresh-token-hash';
 import { RefreshToken } from '../../domain/refresh-token.entity';
-import type { LoginInput, LoginResult } from '../dto/auth.dto';
+import type { LoginInput, SessionResult } from '../dto/auth.dto';
 
 /**
  * `User` belongs to the `users` module, not this one. Reaching it through
@@ -33,7 +34,7 @@ export class AuthenticationService {
     private readonly env: EnvService,
   ) {}
 
-  async login(input: LoginInput): Promise<LoginResult> {
+  async login(input: LoginInput): Promise<SessionResult> {
     return this.unitOfWork.runInTransaction(async (ctx) => {
       const user = await ctx.users.findByEmail(input.email);
 
@@ -47,7 +48,7 @@ export class AuthenticationService {
         throw new InvalidCredentialsError('Email or password is incorrect.');
       }
 
-      return this.issueSession(ctx, user.id, user.email);
+      return this.issueSession(ctx, user);
     });
   }
 
@@ -57,7 +58,7 @@ export class AuthenticationService {
    * token that gets used first locks out the legitimate client on its next
    * attempt instead of both sides quietly sharing one long-lived secret.
    */
-  async refresh(rawRefreshToken: string): Promise<LoginResult> {
+  async refresh(rawRefreshToken: string): Promise<SessionResult> {
     return this.unitOfWork.runInTransaction(async (ctx) => {
       const now = new Date();
       const existing = await ctx.refreshTokens.findByTokenHash(hashRefreshToken(rawRefreshToken));
@@ -74,7 +75,7 @@ export class AuthenticationService {
         throw new InvalidRefreshTokenError('Refresh token is invalid, expired, or already used.');
       }
 
-      return this.issueSession(ctx, user.id, user.email);
+      return this.issueSession(ctx, user);
     });
   }
 
@@ -90,12 +91,11 @@ export class AuthenticationService {
     });
   }
 
-  private async issueSession(
-    ctx: RepositoryContext,
-    userId: string,
-    email: string,
-  ): Promise<LoginResult> {
-    const { accessToken, expiresInSeconds } = this.tokenProvider.sign({ sub: userId, email });
+  private async issueSession(ctx: RepositoryContext, user: User): Promise<SessionResult> {
+    const { accessToken, expiresInSeconds } = this.tokenProvider.sign({
+      sub: user.id,
+      email: user.email,
+    });
 
     const now = new Date();
     const rawRefreshToken = randomBytes(32).toString('hex');
@@ -103,7 +103,7 @@ export class AuthenticationService {
 
     const refreshToken = new RefreshToken({
       id: randomUUID(),
-      userId,
+      userId: user.id,
       tokenHash: hashRefreshToken(rawRefreshToken),
       expiresAt: new Date(now.getTime() + refreshTokenTtlSeconds * 1000),
       revokedAt: null,
@@ -112,6 +112,12 @@ export class AuthenticationService {
 
     await ctx.refreshTokens.save(refreshToken);
 
-    return { accessToken, tokenType: 'Bearer', expiresInSeconds, refreshToken: rawRefreshToken };
+    return {
+      accessToken,
+      tokenType: 'Bearer',
+      expiresInSeconds,
+      user: { id: user.id, email: user.email, name: user.name },
+      refreshToken: rawRefreshToken,
+    };
   }
 }

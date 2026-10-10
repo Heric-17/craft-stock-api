@@ -5,12 +5,13 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
-import type { LoginResult } from '../src/modules/auth/application/dto/auth.dto';
+import type { SessionResponse } from '../src/modules/auth/application/dto/auth.dto';
 import type { MaterialView } from '../src/modules/materials/application/dto/materials.dto';
 import type { SaleView } from '../src/modules/sales/application/dto/sales.dto';
 import { UsersService } from '../src/modules/users/application/services/users.service';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
+import { configureTestApp } from './support/configure-test-app';
 
 /**
  * End-to-end coverage of §15.2's automatic audit capture, driven over real
@@ -37,6 +38,7 @@ describe('Audit trail (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    configureTestApp(app, moduleRef);
     await app.init();
     server = app.getHttpServer() as Server;
     prisma = moduleRef.get(PrismaService);
@@ -154,7 +156,7 @@ describe('Audit trail (e2e)', () => {
       .send({ email, password })
       .expect(HttpStatus.OK);
 
-    const body = loginResponse.body as LoginResult;
+    const body = loginResponse.body as SessionResponse;
     expect(body.accessToken).toBeTruthy();
 
     const auditRows = await prisma.auditLog.findMany({

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import type { EntityReferenceCounts } from '../../../../shared/domain/errors/entity-in-use.error';
 import { PRISMA_CLIENT } from '../../../../shared/infrastructure/prisma/prisma-client.token';
 import type { Prisma } from '../../../../shared/infrastructure/prisma/generated/client';
 import type { BillOfMaterials } from '../../domain/bill-of-materials.entity';
@@ -66,7 +67,12 @@ export class PrismaCompositeProductRepository implements CompositeProductReposit
     }
   }
 
-  async countReferences(compositeProductId: string): Promise<number> {
-    return this.prisma.saleItem.count({ where: { compositeProductId } });
+  async countReferences(compositeProductId: string): Promise<EntityReferenceCounts> {
+    // A `CompositeProduct` is referenced by past sales and by nothing else:
+    // a `BillOfMaterials` belongs to its own aggregate, and no purchase or
+    // stock movement points at a product.
+    const saleItems = await this.prisma.saleItem.count({ where: { compositeProductId } });
+
+    return { saleItems, bomItems: 0, purchaseItems: 0, stockMovements: 0 };
   }
 }

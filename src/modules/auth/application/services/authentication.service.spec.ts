@@ -87,6 +87,27 @@ describe('AuthenticationService', () => {
       expect(typeof result.refreshToken).toBe('string');
     });
 
+    /**
+     * The SPA holds the access token in memory and has no way to read the
+     * refresh cookie, so the session response is the only place it learns
+     * who it logged in as.
+     */
+    it('reports who the session belongs to, without the password hash', async () => {
+      const { service } = await buildService();
+
+      const result = await service.login({
+        email: 'heric@craftstock.dev',
+        password: PLAIN_PASSWORD,
+      });
+
+      expect(result.user).toEqual({
+        id: expect.any(String) as string,
+        email: 'heric@craftstock.dev',
+        name: expect.any(String) as string,
+      });
+      expect(result.user).not.toHaveProperty('passwordHash');
+    });
+
     it('persists only the hash of the refresh token, never the raw value', async () => {
       const { service, refreshTokens } = await buildService();
 
@@ -128,6 +149,9 @@ describe('AuthenticationService', () => {
 
       expect(typeof refreshed.accessToken).toBe('string');
       expect(refreshed.refreshToken).not.toBe(logged.refreshToken);
+      // Carried across the rotation: the client restoring a session after a
+      // reload gets the user back without a second request.
+      expect(refreshed.user).toEqual(logged.user);
     });
 
     it('rotates: the old refresh token cannot be used a second time', async () => {

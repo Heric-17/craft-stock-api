@@ -62,7 +62,7 @@ function buildMaterial(
     id: randomUUID(),
     name: 'Farinha de trigo',
     description: null,
-    imageUrl: null,
+    imageKey: null,
     packageCost: Money.fromDecimalString('10.00'),
     packageQuantity: 1000,
     // 1 kg bag of flour, consumed by the gram.
@@ -86,7 +86,7 @@ function buildCompositeProductWithBom(
     id: randomUUID(),
     name: 'Bolo de cenoura',
     description: null,
-    imageUrl: null,
+    imageKey: null,
     fixedOperationalCost: Money.fromDecimalString('2.50'),
     profitMargin: 35,
     manualPrice: null,

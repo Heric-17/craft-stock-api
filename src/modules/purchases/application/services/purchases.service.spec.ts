@@ -52,7 +52,7 @@ function buildMaterial(
     id: randomUUID(),
     name: 'Farinha de trigo',
     description: null,
-    imageUrl: null,
+    imageKey: null,
     packageCost: Money.fromDecimalString('10.00'),
     packageQuantity: 1000,
     // 1 kg bag of flour, consumed by the gram.

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import type { EntityReferenceCounts } from '../../../../shared/domain/errors/entity-in-use.error';
 import { PRISMA_CLIENT } from '../../../../shared/infrastructure/prisma/prisma-client.token';
 import type { Prisma } from '../../../../shared/infrastructure/prisma/generated/client';
 import type { Material } from '../../domain/material.entity';
@@ -66,7 +67,7 @@ export class PrismaMaterialRepository implements MaterialRepository {
     return rows.map((row) => MaterialPriceHistoryMapper.toDomain(row));
   }
 
-  async countReferences(materialId: string): Promise<number> {
+  async countReferences(materialId: string): Promise<EntityReferenceCounts> {
     const [bomItems, saleItems, purchaseItems, stockMovements] = await Promise.all([
       this.prisma.bomItem.count({ where: { materialId } }),
       this.prisma.saleItem.count({ where: { materialId } }),
@@ -74,7 +75,7 @@ export class PrismaMaterialRepository implements MaterialRepository {
       this.prisma.stockMovementSnapshot.count({ where: { materialId } }),
     ]);
 
-    return bomItems + saleItems + purchaseItems + stockMovements;
+    return { bomItems, saleItems, purchaseItems, stockMovements };
   }
 
   async countBomItemReferences(materialId: string): Promise<number> {

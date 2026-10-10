@@ -1,3 +1,4 @@
+import type { EntityReferenceCounts } from '../../../../shared/domain/errors/entity-in-use.error';
 import type { CompositeProduct } from '../composite-product.entity';
 import type { BillOfMaterials } from '../bill-of-materials.entity';
 
@@ -9,8 +10,6 @@ export interface CompositeProductRepository {
   save(product: CompositeProduct): Promise<void>;
   delete(id: string): Promise<void>;
   findBillOfMaterials(compositeProductId: string): Promise<BillOfMaterials | null>;
-  /** Upserts the `BillOfMaterials` row and fully replaces its items — `BomItem` has no lifecycle of its own outside the recipe it belongs to. */
   saveBillOfMaterials(billOfMaterials: BillOfMaterials): Promise<void>;
-
-  countReferences(compositeProductId: string): Promise<number>;
+  countReferences(compositeProductId: string): Promise<EntityReferenceCounts>;
 }

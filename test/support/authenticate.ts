@@ -5,7 +5,7 @@ import { HttpStatus } from '@nestjs/common';
 import type { TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 
-import type { LoginResult } from '../../src/modules/auth/application/dto/auth.dto';
+import type { SessionResponse } from '../../src/modules/auth/application/dto/auth.dto';
 import { UsersService } from '../../src/modules/users/application/services/users.service';
 
 export interface AuthenticatedActor {
@@ -38,6 +38,6 @@ export async function authenticate(
     .send({ email, password })
     .expect(HttpStatus.OK);
 
-  const body = response.body as LoginResult;
+  const body = response.body as SessionResponse;
   return { authHeader: `Bearer ${body.accessToken}`, userId: user.id };
 }

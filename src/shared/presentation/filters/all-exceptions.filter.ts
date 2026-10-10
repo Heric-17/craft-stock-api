@@ -33,8 +33,23 @@ import { StructuredLogger } from '../../infrastructure/logging/structured-logger
 
 export interface ErrorResponseBody {
   statusCode: number;
+  /**
+   * The stable, machine-readable identifier for what went wrong, in
+   * SCREAMING_SNAKE_CASE — `ENTITY_IN_USE`, `VALIDATION_FAILED`,
+   * `INTERNAL_ERROR`. This is the public contract: clients branch and
+   * translate on it, and changing one is a breaking change
+   * (docs/api-contract.md lists every value).
+   *
+   * `message` below stays in English and is for the log and for a developer
+   * reading a response by hand. The people using this system read
+   * Portuguese, so the sentence is deliberately not what the interface shows
+   * — a client that parsed it would break the first time someone reworded a
+   * line.
+   */
+  code: string;
   error: string;
   message: string;
+  /** Typed per `code`: the few facts the screen needs, as data. */
   details?: unknown;
   path: string;
   timestamp: string;
@@ -60,7 +75,7 @@ const SERVER_ERROR_FLOOR = 500;
  * inside the domain. The default for everything not listed here is 422.
  */
 const DOMAIN_ERROR_STATUS: readonly {
-  error: abstract new (...args: never[]) => DomainError;
+  error: abstract new (...args: never[]) => DomainError<unknown>;
   status: number;
 }[] = [
   // The note is already recorded. Not a failure: the client is told where the
@@ -91,9 +106,32 @@ const DOMAIN_ERROR_STATUS: readonly {
 
 interface DescribedError {
   status: number;
+  code: string;
   error: string;
   message: string;
   details?: unknown;
+}
+
+/** What validation failures are published as, whatever threw them. */
+const VALIDATION_FAILED_CODE = 'VALIDATION_FAILED';
+
+/**
+ * The code for a failure that is ours and has no domain meaning. Deliberately
+ * one value for every one of them: a 500 tells the client nothing actionable,
+ * and the `errorId` is what carries the investigation forward.
+ */
+const INTERNAL_ERROR_CODE = 'INTERNAL_ERROR';
+
+/**
+ * A code for an `HttpException` the framework raised rather than the domain —
+ * a 404 from an unmatched route, a 413 from the upload size limit. Derived
+ * from the status name so these are as branchable as the domain ones without
+ * a second table to maintain.
+ */
+function codeForStatus(status: number): string {
+  const name: unknown = (HttpStatus as unknown as Record<number, string | undefined>)[status];
+
+  return typeof name === 'string' ? name : 'HTTP_ERROR';
 }
 
 /**
@@ -133,6 +171,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const body: ErrorResponseBody = {
       statusCode: described.status,
+      code: described.code,
       error: described.error,
       message: described.message,
       ...(described.details !== undefined ? { details: described.details } : {}),
@@ -180,17 +219,33 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const payload = exception.getResponse();
 
       if (typeof payload === 'string') {
-        return { status, error: exception.name, message: payload };
+        return { status, code: codeForStatus(status), error: exception.name, message: payload };
       }
 
       const record = payload as Record<string, unknown>;
       const message = record.message;
+      const error = typeof record.error === 'string' ? record.error : exception.name;
 
-      // `ValidationPipe` reports every violation as an array of strings.
+      // What `validationExceptionFactory` produces: one entry per offending
+      // field, carrying the path to it. Passed through as-is.
+      if (Array.isArray(record.details)) {
+        return {
+          status,
+          code: VALIDATION_FAILED_CODE,
+          error,
+          message: 'Validation failed',
+          details: record.details,
+        };
+      }
+
+      // A `ValidationPipe` configured without that factory — or any other
+      // pipe — reports violations as a bare array of sentences. Kept so such
+      // a failure still answers in the documented shape.
       if (Array.isArray(message)) {
         return {
           status,
-          error: typeof record.error === 'string' ? record.error : exception.name,
+          code: VALIDATION_FAILED_CODE,
+          error,
           message: 'Validation failed',
           details: message,
         };
@@ -198,7 +253,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
       return {
         status,
-        error: typeof record.error === 'string' ? record.error : exception.name,
+        code: codeForStatus(status),
+        error,
         message: typeof message === 'string' ? message : exception.message,
       };
     }
@@ -208,13 +264,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
       return {
         status: mapped?.status ?? HttpStatus.UNPROCESSABLE_ENTITY,
+        // Derived from the class name by the error itself. Read back off the
+        // instance rather than recomputed here, so there is one rule and the
+        // domain owns it.
+        code: exception.code,
         error: exception.name,
         message: exception.message,
+        ...(exception.details !== undefined ? { details: exception.details } : {}),
       };
     }
 
     return {
       status: HttpStatus.INTERNAL_SERVER_ERROR,
+      code: INTERNAL_ERROR_CODE,
       error: 'InternalServerError',
       message: 'Internal server error',
     };

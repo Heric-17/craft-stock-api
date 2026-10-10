@@ -3,7 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { discardStoredImage } from '../../../../shared/application/storage/discard-stored-image';
-import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
+import {
+  imageUrlResolver,
+  type ResolveImageUrl,
+} from '../../../../shared/application/storage/resolve-image-url';
+import {
+  EntityInUseError,
+  totalReferences,
+} from '../../../../shared/domain/errors/entity-in-use.error';
 import { Money } from '../../../../shared/domain/money/money';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
 import {
@@ -52,6 +59,16 @@ export class CompositeProductsService {
     private readonly logger: StructuredLogger,
   ) {}
 
+  /**
+   * The function that turns a stored key into an absolute URL on the way
+   * out. Built per call from the configured provider rather than held as
+   * state, matching how `setImage` and `removeImage` already reach for the
+   * factory.
+   */
+  private get resolveImageUrl(): ResolveImageUrl {
+    return imageUrlResolver(this.storageProviderFactory.create());
+  }
+
   async create(input: CreateCompositeProductInput): Promise<CompositeProductView> {
     const now = new Date();
     const productId = randomUUID();
@@ -60,7 +77,7 @@ export class CompositeProductsService {
       id: productId,
       name: input.name,
       description: input.description,
-      imageUrl: null,
+      imageKey: null,
       fixedOperationalCost: Money.fromDecimalString(input.fixedOperationalCost),
       profitMargin: input.profitMargin,
       manualPrice: input.manualPrice ? Money.fromDecimalString(input.manualPrice) : null,
@@ -84,7 +101,12 @@ export class CompositeProductsService {
       await ctx.compositeProducts.saveBillOfMaterials(billOfMaterials);
     });
 
-    return CompositeProductViewMapper.toView(product, billOfMaterials, materialsById);
+    return CompositeProductViewMapper.toView(
+      product,
+      billOfMaterials,
+      materialsById,
+      this.resolveImageUrl,
+    );
   }
 
   async update(
@@ -137,7 +159,12 @@ export class CompositeProductsService {
       }
     });
 
-    return CompositeProductViewMapper.toView(updated, billOfMaterials, materialsById);
+    return CompositeProductViewMapper.toView(
+      updated,
+      billOfMaterials,
+      materialsById,
+      this.resolveImageUrl,
+    );
   }
 
   async findById(productId: string): Promise<CompositeProductView> {
@@ -147,7 +174,12 @@ export class CompositeProductsService {
       billOfMaterials.items.map((item) => item.materialId),
     );
 
-    return CompositeProductViewMapper.toView(product, billOfMaterials, materialsById);
+    return CompositeProductViewMapper.toView(
+      product,
+      billOfMaterials,
+      materialsById,
+      this.resolveImageUrl,
+    );
   }
 
   async list(includeDiscontinued = false): Promise<CompositeProductView[]> {
@@ -163,7 +195,14 @@ export class CompositeProductsService {
       }
 
       const billOfMaterials = await this.findBillOfMaterialsOrThrow(product.id);
-      views.push(CompositeProductViewMapper.toView(product, billOfMaterials, materialsById));
+      views.push(
+        CompositeProductViewMapper.toView(
+          product,
+          billOfMaterials,
+          materialsById,
+          this.resolveImageUrl,
+        ),
+      );
     }
 
     return views;
@@ -171,10 +210,10 @@ export class CompositeProductsService {
 
   async delete(productId: string): Promise<void> {
     await this.findProductOrThrow(productId);
-    const referenceCount = await this.compositeProducts.countReferences(productId);
+    const references = await this.compositeProducts.countReferences(productId);
 
-    if (referenceCount > 0) {
-      throw new EntityInUseError('CompositeProduct', productId, referenceCount);
+    if (totalReferences(references) > 0) {
+      throw new EntityInUseError('CompositeProduct', productId, references);
     }
 
     await this.unitOfWork.runInTransaction(async (ctx) => {
@@ -196,7 +235,12 @@ export class CompositeProductsService {
       billOfMaterials.items.map((item) => item.materialId),
     );
 
-    return CompositeProductViewMapper.toView(updated, billOfMaterials, materialsById);
+    return CompositeProductViewMapper.toView(
+      updated,
+      billOfMaterials,
+      materialsById,
+      this.resolveImageUrl,
+    );
   }
 
   async reactivate(productId: string): Promise<CompositeProductView> {
@@ -213,13 +257,18 @@ export class CompositeProductsService {
       billOfMaterials.items.map((item) => item.materialId),
     );
 
-    return CompositeProductViewMapper.toView(updated, billOfMaterials, materialsById);
+    return CompositeProductViewMapper.toView(
+      updated,
+      billOfMaterials,
+      materialsById,
+      this.resolveImageUrl,
+    );
   }
 
   /**
    * Uploads via the currently selected `StorageProvider` before touching the
    * database, and deletes the previous image only after the new key is
-   * saved — so a failure at either step never leaves `imageUrl` pointing at
+   * saved — so a failure at either step never leaves `imageKey` pointing at
    * nothing, and at worst leaves an orphaned object in storage rather than a
    * dangling reference.
    */
@@ -228,16 +277,16 @@ export class CompositeProductsService {
     const current = await this.findProductOrThrow(productId);
     const provider = this.storageProviderFactory.create();
     const newKey = await provider.upload(file);
-    const updated = current.update({ imageUrl: newKey }, now);
+    const updated = current.update({ imageKey: newKey }, now);
 
     await this.unitOfWork.runInTransaction(async (ctx) => {
       await ctx.compositeProducts.save(updated);
     });
 
-    if (current.imageUrl !== null) {
+    if (current.imageKey !== null) {
       await discardStoredImage(
         provider,
-        current.imageUrl,
+        current.imageKey,
         this.logger,
         CompositeProductsService.name,
       );
@@ -248,22 +297,27 @@ export class CompositeProductsService {
       billOfMaterials.items.map((item) => item.materialId),
     );
 
-    return CompositeProductViewMapper.toView(updated, billOfMaterials, materialsById);
+    return CompositeProductViewMapper.toView(
+      updated,
+      billOfMaterials,
+      materialsById,
+      this.resolveImageUrl,
+    );
   }
 
   async removeImage(productId: string): Promise<CompositeProductView> {
     const now = new Date();
     const current = await this.findProductOrThrow(productId);
-    const updated = current.update({ imageUrl: null }, now);
+    const updated = current.update({ imageKey: null }, now);
 
     await this.unitOfWork.runInTransaction(async (ctx) => {
       await ctx.compositeProducts.save(updated);
     });
 
-    if (current.imageUrl !== null) {
+    if (current.imageKey !== null) {
       await discardStoredImage(
         this.storageProviderFactory.create(),
-        current.imageUrl,
+        current.imageKey,
         this.logger,
         CompositeProductsService.name,
       );
@@ -274,7 +328,12 @@ export class CompositeProductsService {
       billOfMaterials.items.map((item) => item.materialId),
     );
 
-    return CompositeProductViewMapper.toView(updated, billOfMaterials, materialsById);
+    return CompositeProductViewMapper.toView(
+      updated,
+      billOfMaterials,
+      materialsById,
+      this.resolveImageUrl,
+    );
   }
 
   private buildBillOfMaterials(

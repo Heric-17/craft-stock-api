@@ -12,6 +12,8 @@ const BASE_ENV: Env = {
   PORT: 3000,
   LOG_LEVEL: 'info',
   DATABASE_URL: 'postgresql://localhost:5432/craftstock',
+  CORS_ORIGINS: '',
+  AUTH_COOKIE_SECURE: true,
   NFCE_PROVIDER: 'AUTO',
   NFCE_IMPORT_MAX_ATTEMPTS: 3,
   NFCE_IMPORT_RETRY_DELAY_MS: 1_000,

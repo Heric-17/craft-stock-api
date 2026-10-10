@@ -21,7 +21,9 @@ export function extensionForImageMimeType(mimeType: string): string {
   const extension = IMAGE_EXTENSION_BY_MIME_TYPE[mimeType];
 
   if (extension === undefined) {
-    throw new UnsupportedImageMimeTypeError(mimeType);
+    // The allowed set travels with the refusal, so the upload screen can say
+    // what it does accept without keeping its own copy of this list.
+    throw new UnsupportedImageMimeTypeError(mimeType, ALLOWED_IMAGE_MIME_TYPES);
   }
 
   return extension;

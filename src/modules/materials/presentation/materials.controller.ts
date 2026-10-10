@@ -62,6 +62,19 @@ export class MaterialsController {
     return this.materialsService.list(includeDiscontinued);
   }
 
+  /**
+   * Detail of one `Material`. Declared after the collection route and before
+   * the more specific `:id/...` ones; those carry a second segment, so
+   * nothing here shadows them.
+   *
+   * Answers for a discontinued Material too — a screen reached by a link to
+   * one has to be able to render it (§9).
+   */
+  @Get(':id')
+  findById(@Param('id') id: string): Promise<MaterialView> {
+    return this.materialsService.findById(id);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateMaterialDto): Promise<MaterialView> {
     const input: UpdateMaterialInput = {};

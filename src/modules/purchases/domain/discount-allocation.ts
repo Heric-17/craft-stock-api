@@ -59,13 +59,17 @@ export function allocateDiscount(
   manual?: ManualAllocation,
 ): AllocatedDiscount[] {
   if (discountTotal.isNegative()) {
-    throw new DiscountAllocationError('Invoice discountTotal must not be negative.');
+    throw new DiscountAllocationError('Invoice discountTotal must not be negative.', {
+      reason: 'NEGATIVE_DISCOUNT_TOTAL',
+      provided: discountTotal.toDecimalString(),
+    });
   }
 
   if (lines.length === 0) {
     if (!discountTotal.isZero()) {
       throw new DiscountAllocationError(
         'An invoice discount cannot be attributed: the purchase has no lines.',
+        { reason: 'NO_LINES', expected: discountTotal.toDecimalString() },
       );
     }
 
@@ -92,6 +96,7 @@ function allocateManually(
   if (manual === undefined) {
     throw new DiscountAllocationError(
       'MANUAL discount allocation requires an amount for each line.',
+      { reason: 'MANUAL_INPUT_MISSING', expected: discountTotal.toDecimalString(), mode: 'MANUAL' },
     );
   }
 
@@ -101,12 +106,25 @@ function allocateManually(
     if (amount.isNegative()) {
       throw new DiscountAllocationError(
         `Manual discount for line ${line.id} must not be negative.`,
+        {
+          reason: 'NEGATIVE_LINE_AMOUNT',
+          itemId: line.id,
+          provided: amount.toDecimalString(),
+          mode: 'MANUAL',
+        },
       );
     }
 
     if (amount.isGreaterThan(line.grossValue)) {
       throw new DiscountAllocationError(
         `Manual discount of ${amount.toDecimalString()} for line ${line.id} exceeds the line's gross value of ${line.grossValue.toDecimalString()}.`,
+        {
+          reason: 'LINE_EXCEEDS_GROSS',
+          itemId: line.id,
+          expected: line.grossValue.toDecimalString(),
+          provided: amount.toDecimalString(),
+          mode: 'MANUAL',
+        },
       );
     }
 
@@ -121,6 +139,12 @@ function allocateManually(
   if (!total.equals(discountTotal)) {
     throw new DiscountAllocationError(
       `Manual discount allocation adds up to ${total.toDecimalString()}, which does not match the note's discountTotal of ${discountTotal.toDecimalString()}.`,
+      {
+        reason: 'SUM_MISMATCH',
+        expected: discountTotal.toDecimalString(),
+        provided: total.toDecimalString(),
+        mode: 'MANUAL',
+      },
     );
   }
 
@@ -137,6 +161,7 @@ function allocateProportionally(
   if (eligible.length === 0) {
     throw new DiscountAllocationError(
       `${mode} discount allocation was chosen, but the purchase has no eligible line to carry the discount.`,
+      { reason: 'NO_ELIGIBLE_LINE', mode, expected: discountTotal.toDecimalString() },
     );
   }
 
@@ -145,6 +170,12 @@ function allocateProportionally(
   if (discountTotal.isGreaterThan(eligibleGross)) {
     throw new DiscountAllocationError(
       `A discount of ${discountTotal.toDecimalString()} cannot be attributed to lines worth ${eligibleGross.toDecimalString()}: no line may take more discount than it is worth.`,
+      {
+        reason: 'DISCOUNT_EXCEEDS_GROSS',
+        mode,
+        expected: eligibleGross.toDecimalString(),
+        provided: discountTotal.toDecimalString(),
+      },
     );
   }
 
@@ -162,7 +193,7 @@ function allocateProportionally(
   const residue = discountTotal.minus(sumAllocations(allocated));
 
   if (!residue.isZero()) {
-    applyResidue(lines, allocated, residue, eligibleIds);
+    applyResidue(lines, allocated, residue, eligibleIds, mode);
   }
 
   return allocated;
@@ -179,6 +210,7 @@ function applyResidue(
   allocated: AllocatedDiscount[],
   residue: Money,
   eligibleIds: ReadonlySet<string>,
+  mode: DiscountAllocationMode,
 ): void {
   const candidates = lines
     .map((line, index) => ({ line, index }))
@@ -196,6 +228,7 @@ function applyResidue(
 
   throw new DiscountAllocationError(
     `The rounding residue of ${residue.toDecimalString()} could not be attributed to any eligible line without exceeding its gross value.`,
+    { reason: 'RESIDUE_UNALLOCATABLE', mode, provided: residue.toDecimalString() },
   );
 }
 
