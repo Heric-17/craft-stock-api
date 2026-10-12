@@ -19,6 +19,21 @@ describe('formatFractionalAmount', () => {
     expect(formatFractionalAmount(Money.fromDecimalString('20.00'), 3)).toBe('6.6667');
   });
 
+  it('decides a tie in the fourth place by the money rounding policy, half away from zero', () => {
+    // 1 ¢ over 8 is 0,00125 R$ = 12,5 hundredths of a cent: a tie. Float
+    // division rounded it with Math.round, which sends -12,5 to -12 (toward
+    // +infinity) while 12,5 goes to 13; the policy sends both away from zero.
+    expect(formatFractionalAmount(Money.fromCents(1), 8)).toBe('0.0013');
+    expect(formatFractionalAmount(Money.fromCents(-1), 8)).toBe('-0.0013');
+  });
+
+  it('does not let float division decide a tie', () => {
+    // 5 ¢ over 40 is exactly 12,5 hundredths of a cent as well, and 0,0013 is
+    // the answer for every route to the same fraction.
+    expect(formatFractionalAmount(Money.fromCents(5), 40)).toBe('0.0013');
+    expect(formatFractionalAmount(Money.fromCents(-5), 40)).toBe('-0.0013');
+  });
+
   it('keeps the sign in front of the whole amount', () => {
     expect(formatFractionalAmount(Money.fromDecimalString('-28.00'), 1000)).toBe('-0.0280');
   });

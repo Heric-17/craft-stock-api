@@ -186,7 +186,7 @@ describe('Audit trail (e2e)', () => {
       .send({
         customerName: 'Audit Trail Buyer',
         paymentMethod: 'PIX',
-        items: [{ materialId: material.id, quantity: 100, marginPercent: 20 }],
+        items: [{ materialId: material.id, quantity: 100, marginBasisPoints: 2000 }],
       })
       .expect(HttpStatus.CREATED);
 

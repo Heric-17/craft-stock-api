@@ -2,15 +2,17 @@ import { Type } from 'class-transformer';
 import {
   ArrayUnique,
   IsArray,
-  IsNumber,
+  IsInt,
   IsOptional,
   IsString,
   Matches,
+  Max,
   Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
 
+import { MAX_MARGIN_BASIS_POINTS } from '../../../../shared/domain/money/margin';
 import { BomItemDto } from './bom-item.dto';
 import { MONEY_DECIMAL_PATTERN } from './money-decimal.validator';
 
@@ -39,9 +41,15 @@ export class UpdateCompositeProductDto {
   fixedOperationalCost?: string;
 
   @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
+  /**
+   * Margin in whole basis points: 33,33% is `3333`, 100% is `10000`. A
+   * transport and calculation representation only; the screen still shows and
+   * accepts a percentage. Capped at what the column holds, 999,99%.
+   */
+  @IsInt()
   @Min(0)
-  profitMargin?: number;
+  @Max(MAX_MARGIN_BASIS_POINTS)
+  profitMarginBasisPoints?: number;
 
   @IsOptional()
   @IsString()

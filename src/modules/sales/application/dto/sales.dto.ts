@@ -8,12 +8,13 @@ export interface CreateSaleItemInput {
   materialId?: string;
   quantity: number;
   /**
-   * Percentage markup over the Material's `packageCost`, required for a
+   * Markup over the Material's `packageCost` in whole basis points (`5000` is
+   * 50%), required for a
    * loose-Material line and rejected for a `CompositeProduct` one, which
    * carries its own margin. Zero sells at cost and has to be stated: see
    * `calculateLooseMaterialPriceBasis`.
    */
-  marginPercent?: number;
+  marginBasisPoints?: number;
 }
 
 export interface CreateSaleInput {

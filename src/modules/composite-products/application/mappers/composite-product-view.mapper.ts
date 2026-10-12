@@ -3,10 +3,7 @@ import type { Material } from '../../../materials/domain/material.entity';
 import type { BillOfMaterials } from '../../domain/bill-of-materials.entity';
 import {
   calculateBomItemCost,
-  calculateFinalPrice,
-  calculateMaterialsCost,
-  calculateSuggestedPrice,
-  calculateTotalCost,
+  calculateCompositeProductPricing,
 } from '../../domain/composite-product-pricing';
 import type { CompositeProduct } from '../../domain/composite-product.entity';
 import { calculateProductionCapacity } from '../../domain/production-capacity';
@@ -31,16 +28,17 @@ export class CompositeProductViewMapper {
       material: CompositeProductViewMapper.materialOrThrow(materialsById, item.materialId),
     }));
 
-    const materialsCost = calculateMaterialsCost(
-      items.map(({ item, material }) => ({
-        quantity: item.quantity,
-        packageCost: material.packageCost,
-        packageQuantity: material.packageQuantity,
-      })),
-    );
-    const totalCost = calculateTotalCost(materialsCost, product.fixedOperationalCost);
-    const suggestedPrice = calculateSuggestedPrice(totalCost, product.profitMargin);
-    const finalPrice = calculateFinalPrice(suggestedPrice, product.manualPrice);
+    const { materialsCost, totalCost, suggestedPrice, finalPrice } =
+      calculateCompositeProductPricing({
+        lines: items.map(({ item, material }) => ({
+          quantity: item.quantity,
+          packageCost: material.packageCost,
+          packageQuantity: material.packageQuantity,
+        })),
+        fixedOperationalCost: product.fixedOperationalCost,
+        profitMarginBasisPoints: product.profitMarginBasisPoints,
+        manualPrice: product.manualPrice,
+      });
 
     const capacity = calculateProductionCapacity(
       items.map(({ item, material }) => ({
@@ -84,7 +82,7 @@ export class CompositeProductViewMapper {
       description: product.description,
       imageUrl: resolveImageUrl(product.imageKey),
       fixedOperationalCost: product.fixedOperationalCost.toDecimalString(),
-      profitMargin: product.profitMargin,
+      profitMarginBasisPoints: product.profitMarginBasisPoints,
       manualPrice: product.manualPrice?.toDecimalString() ?? null,
       materialsCost: materialsCost.toDecimalString(),
       totalCost: totalCost.toDecimalString(),

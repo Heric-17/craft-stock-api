@@ -9,12 +9,7 @@ import {
   type UnitOfWork,
 } from '../../../../shared/domain/persistence/unit-of-work';
 import type { CompositeProduct } from '../../../composite-products/domain/composite-product.entity';
-import {
-  calculateFinalPrice,
-  calculateMaterialsCost,
-  calculateSuggestedPrice,
-  calculateTotalCost,
-} from '../../../composite-products/domain/composite-product-pricing';
+import { calculateCompositeProductPricing } from '../../../composite-products/domain/composite-product-pricing';
 import {
   COMPOSITE_PRODUCT_REPOSITORY,
   type CompositeProductRepository,
@@ -455,18 +450,18 @@ export class SalesService {
       // Selling an input at cost is allowed; arriving at cost by omission is
       // not. Nothing downstream can tell a deliberate zero margin from a
       // margin nobody was asked for, so the choice is demanded here.
-      if (hasMaterial && input.marginPercent === undefined) {
+      if (hasMaterial && input.marginBasisPoints === undefined) {
         throw new MissingLooseMaterialMarginError(
-          `Sale item for Material ${input.materialId as string} requires an explicit marginPercent. Send 0 to sell at cost.`,
+          `Sale item for Material ${input.materialId as string} requires an explicit marginBasisPoints. Send 0 to sell at cost.`,
         );
       }
 
       // A CompositeProduct is priced by its own margin, already baked into
       // `finalPrice`. Accepting a second one here and ignoring it would read
       // as if it had been applied.
-      if (hasProduct && input.marginPercent !== undefined) {
+      if (hasProduct && input.marginBasisPoints !== undefined) {
         throw new UnexpectedMarginError(
-          `Sale item for CompositeProduct ${input.compositeProductId as string} must not carry a marginPercent: a CompositeProduct is sold at its own finalPrice.`,
+          `Sale item for CompositeProduct ${input.compositeProductId as string} must not carry a marginBasisPoints: a CompositeProduct is sold at its own finalPrice.`,
         );
       }
     }
@@ -501,8 +496,8 @@ export class SalesService {
       const bomMaterialsById = await this.loadMaterialsById(
         (bom?.items ?? []).map((item) => item.materialId),
       );
-      const materialsCost = calculateMaterialsCost(
-        (bom?.items ?? []).map((item) => {
+      const { finalPrice } = calculateCompositeProductPricing({
+        lines: (bom?.items ?? []).map((item) => {
           const material = this.materialOrThrow(bomMaterialsById, item.materialId);
 
           return {
@@ -511,13 +506,11 @@ export class SalesService {
             packageQuantity: material.packageQuantity,
           };
         }),
-      );
-      const totalCost = calculateTotalCost(materialsCost, product.fixedOperationalCost);
-      const suggestedPrice = calculateSuggestedPrice(totalCost, product.profitMargin);
-      finalPriceByCompositeProductId.set(
-        productId,
-        calculateFinalPrice(suggestedPrice, product.manualPrice),
-      );
+        fixedOperationalCost: product.fixedOperationalCost,
+        profitMarginBasisPoints: product.profitMarginBasisPoints,
+        manualPrice: product.manualPrice,
+      });
+      finalPriceByCompositeProductId.set(productId, finalPrice);
     }
 
     const materialsById = await this.loadMaterialsById(materialIds);
@@ -566,7 +559,7 @@ export class SalesService {
         // fit in whole cents, so the division waits for `lineTotal`.
         priceBasisAmount: calculateLooseMaterialPriceBasis(
           material.packageCost,
-          input.marginPercent as number,
+          input.marginBasisPoints as number,
         ),
         priceBasisQuantity: material.packageQuantity,
       });

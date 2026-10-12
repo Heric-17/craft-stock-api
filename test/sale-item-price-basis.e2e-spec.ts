@@ -82,12 +82,12 @@ describe('SaleItem price basis (e2e)', () => {
     return material;
   }
 
-  async function sell(materialId: string, quantity: number, marginPercent: number) {
+  async function sell(materialId: string, quantity: number, marginBasisPoints: number) {
     const view = await salesService.create({
       customerName: 'Maria',
       customerContact: null,
       paymentMethod: 'PIX',
-      items: [{ materialId, quantity, marginPercent }],
+      items: [{ materialId, quantity, marginBasisPoints }],
     });
     createdSaleIds.push(view.id);
     return view;
@@ -110,7 +110,7 @@ describe('SaleItem price basis (e2e)', () => {
 
   it('charges R$ 5,04 for the same 120 g at a 50% margin', async () => {
     const flour = await seedFlour();
-    const created = await sell(flour.id, 120, 50);
+    const created = await sell(flour.id, 120, 5000);
 
     const reread = await salesService.findById(created.id);
 
@@ -131,7 +131,7 @@ describe('SaleItem price basis (e2e)', () => {
 
   it('keeps the stored basis when the quantity of the line changes', async () => {
     const flour = await seedFlour();
-    const created = await sell(flour.id, 120, 50);
+    const created = await sell(flour.id, 120, 5000);
 
     const updated = await salesService.updateItemQuantity(created.id, created.items[0].id, 240);
 

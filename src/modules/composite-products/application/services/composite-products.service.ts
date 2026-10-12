@@ -79,7 +79,7 @@ export class CompositeProductsService {
       description: input.description,
       imageKey: null,
       fixedOperationalCost: Money.fromDecimalString(input.fixedOperationalCost),
-      profitMargin: input.profitMargin,
+      profitMarginBasisPoints: input.profitMarginBasisPoints,
       manualPrice: input.manualPrice ? Money.fromDecimalString(input.manualPrice) : null,
       discontinuedAt: null,
       createdAt: now,
@@ -122,7 +122,9 @@ export class CompositeProductsService {
     if (input.fixedOperationalCost !== undefined) {
       changes.fixedOperationalCost = Money.fromDecimalString(input.fixedOperationalCost);
     }
-    if (input.profitMargin !== undefined) changes.profitMargin = input.profitMargin;
+    if (input.profitMarginBasisPoints !== undefined) {
+      changes.profitMarginBasisPoints = input.profitMarginBasisPoints;
+    }
     if (input.manualPrice !== undefined) {
       changes.manualPrice =
         input.manualPrice === null ? null : Money.fromDecimalString(input.manualPrice);

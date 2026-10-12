@@ -13,7 +13,7 @@ describe('buildStorageKey', () => {
 
   /**
    * Load-bearing, not cosmetic: the bucket is public for reads at a fixed
-   * URL (docs/DEPLOY.md), so the only thing standing between an image and
+   * URL, so the only thing standing between an image and
    * anyone who wants to find it is that its name carries 122 random bits.
    * A key built from a counter, a timestamp or the uploaded file name would
    * make every stored image enumerable.

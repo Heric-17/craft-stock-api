@@ -88,7 +88,7 @@ function buildCompositeProductWithBom(
     description: null,
     imageKey: null,
     fixedOperationalCost: Money.fromDecimalString('2.50'),
-    profitMargin: 35,
+    profitMarginBasisPoints: 3500,
     manualPrice: null,
     discontinuedAt: null,
     createdAt: now,
@@ -143,7 +143,9 @@ describe('SalesService', () => {
       await materials.save(flour);
 
       const sale = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 120, marginPercent: 0 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 120, marginBasisPoints: 0 }],
+        }),
       );
 
       expect(sale.items).toHaveLength(1);
@@ -167,7 +169,9 @@ describe('SalesService', () => {
       await materials.save(flour);
 
       const sale = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 120, marginPercent: 50 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 120, marginBasisPoints: 5000 }],
+        }),
       );
 
       expect(sale.items[0].priceBasisAmount).toBe('42.00');
@@ -188,7 +192,7 @@ describe('SalesService', () => {
       await materials.save(eggs);
 
       const sale = await service.create(
-        buildCreateInput({ items: [{ materialId: eggs.id, quantity: 3, marginPercent: 0 }] }),
+        buildCreateInput({ items: [{ materialId: eggs.id, quantity: 3, marginBasisPoints: 0 }] }),
       );
 
       expect(sale.items[0].unitPrice).toBe('3.3333');
@@ -201,7 +205,7 @@ describe('SalesService', () => {
       const flour = buildMaterial();
       await materials.save(flour);
 
-      // Selling at cost is allowed, but only on purpose: `marginPercent: 0`
+      // Selling at cost is allowed, but only on purpose: `marginBasisPoints: 0`
       // says so, and an absent margin is not the same statement.
       await expect(
         service.create(buildCreateInput({ items: [{ materialId: flour.id, quantity: 120 }] })),
@@ -217,7 +221,7 @@ describe('SalesService', () => {
       await expect(
         service.create(
           buildCreateInput({
-            items: [{ compositeProductId: product.id, quantity: 1, marginPercent: 20 }],
+            items: [{ compositeProductId: product.id, quantity: 1, marginBasisPoints: 2000 }],
           }),
         ),
       ).rejects.toThrow(UnexpectedMarginError);
@@ -258,7 +262,9 @@ describe('SalesService', () => {
 
       await expect(
         service.create(
-          buildCreateInput({ items: [{ materialId: 'missing', quantity: 1, marginPercent: 0 }] }),
+          buildCreateInput({
+            items: [{ materialId: 'missing', quantity: 1, marginBasisPoints: 0 }],
+          }),
         ),
       ).rejects.toThrow(UnknownMaterialReferenceError);
     });
@@ -270,7 +276,9 @@ describe('SalesService', () => {
 
       await expect(
         service.create(
-          buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
+          buildCreateInput({
+            items: [{ materialId: flour.id, quantity: 1, marginBasisPoints: 0 }],
+          }),
         ),
       ).rejects.toThrow(DiscontinuedMaterialReferenceError);
     });
@@ -285,13 +293,13 @@ describe('SalesService', () => {
       await materials.save(sugar);
 
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginBasisPoints: 0 }] }),
       );
 
       const withSecondItem = await service.addItem(created.id, {
         materialId: sugar.id,
         quantity: 2,
-        marginPercent: 0,
+        marginBasisPoints: 0,
       });
       expect(withSecondItem.items).toHaveLength(2);
 
@@ -310,7 +318,7 @@ describe('SalesService', () => {
       const flour = buildMaterial();
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginBasisPoints: 0 }] }),
       );
 
       const updated = await service.updateDetails(created.id, { customerName: 'Joana' });
@@ -323,12 +331,12 @@ describe('SalesService', () => {
       const flour = buildMaterial();
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginBasisPoints: 0 }] }),
       );
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
 
       await expect(
-        service.addItem(created.id, { materialId: flour.id, quantity: 1, marginPercent: 0 }),
+        service.addItem(created.id, { materialId: flour.id, quantity: 1, marginBasisPoints: 0 }),
       ).rejects.toThrow(SaleNotEditableError);
       await expect(service.updateDetails(created.id, { customerName: 'Joana' })).rejects.toThrow(
         SaleNotEditableError,
@@ -342,7 +350,7 @@ describe('SalesService', () => {
       const flour = buildMaterial();
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginBasisPoints: 0 }] }),
       );
 
       const updated = await service.updatePaymentStatus(created.id, 'PAID');
@@ -358,7 +366,9 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 1000 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 300, marginBasisPoints: 0 }],
+        }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -372,7 +382,9 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 100 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 300, marginBasisPoints: 0 }],
+        }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -390,7 +402,9 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 1000 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 300, marginBasisPoints: 0 }],
+        }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -408,7 +422,9 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 100 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 300, marginBasisPoints: 0 }],
+        }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -428,7 +444,9 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 1000 });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 300, marginPercent: 0 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 300, marginBasisPoints: 0 }],
+        }),
       );
 
       await service.updateProductionStatus(created.id, 'ASSEMBLED');
@@ -446,10 +464,10 @@ describe('SalesService', () => {
       const flour = buildMaterial();
       await materials.save(flour);
       const a = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginBasisPoints: 0 }] }),
       );
       const b = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginPercent: 0 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 1, marginBasisPoints: 0 }] }),
       );
       await service.updatePaymentStatus(a.id, 'PAID');
       await service.updateProductionStatus(b.id, 'ASSEMBLED');
@@ -471,7 +489,9 @@ describe('SalesService', () => {
       });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 120, marginPercent: 50 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 120, marginBasisPoints: 5000 }],
+        }),
       );
 
       const updated = await service.updateItemQuantity(created.id, created.items[0].id, 240);
@@ -490,7 +510,9 @@ describe('SalesService', () => {
       });
       await materials.save(flour);
       const created = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 120, marginPercent: 0 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 120, marginBasisPoints: 0 }],
+        }),
       );
 
       await materials.save(
@@ -534,10 +556,10 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 100 });
       await materials.save(flour);
       const a = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 60, marginPercent: 0 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 60, marginBasisPoints: 0 }] }),
       );
       const b = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 80, marginPercent: 0 }] }),
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 80, marginBasisPoints: 0 }] }),
       );
 
       const list = await service.getShoppingList([a.id, b.id]);
@@ -577,8 +599,8 @@ describe('SalesService', () => {
       const sale = await service.create(
         buildCreateInput({
           items: [
-            { materialId: flour.id, quantity: 1500, marginPercent: 0 },
-            { materialId: sugar.id, quantity: 600, marginPercent: 0 },
+            { materialId: flour.id, quantity: 1500, marginBasisPoints: 0 },
+            { materialId: sugar.id, quantity: 600, marginBasisPoints: 0 },
           ],
         }),
       );
@@ -602,7 +624,9 @@ describe('SalesService', () => {
       const flour = buildMaterial({ stockQuantity: 1000 });
       await materials.save(flour);
       const sale = await service.create(
-        buildCreateInput({ items: [{ materialId: flour.id, quantity: 200, marginPercent: 0 }] }),
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 200, marginBasisPoints: 0 }],
+        }),
       );
 
       const list = await service.getShoppingList([sale.id]);
@@ -623,8 +647,8 @@ describe('SalesService', () => {
       const sale = await service.create(
         buildCreateInput({
           items: [
-            { materialId: flour.id, quantity: 100, marginPercent: 0 },
-            { materialId: sugar.id, quantity: 100, marginPercent: 0 },
+            { materialId: flour.id, quantity: 100, marginBasisPoints: 0 },
+            { materialId: sugar.id, quantity: 100, marginBasisPoints: 0 },
           ],
         }),
       );

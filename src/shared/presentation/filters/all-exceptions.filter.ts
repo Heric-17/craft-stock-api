@@ -38,7 +38,7 @@ export interface ErrorResponseBody {
    * SCREAMING_SNAKE_CASE — `ENTITY_IN_USE`, `VALIDATION_FAILED`,
    * `INTERNAL_ERROR`. This is the public contract: clients branch and
    * translate on it, and changing one is a breaking change
-   * (docs/api-contract.md lists every value).
+   * (every value is published).
    *
    * `message` below stays in English and is for the log and for a developer
    * reading a response by hand. The people using this system read

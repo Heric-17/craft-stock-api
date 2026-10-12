@@ -1,3 +1,4 @@
+import { applyMargin } from '../../../shared/domain/money/margin';
 import { Money } from '../../../shared/domain/money/money';
 
 /**
@@ -54,17 +55,49 @@ export function calculateMaterialsCost(lines: readonly MaterialsCostLine[]): Mon
   );
 }
 
-/** `totalCost = materialsCost + fixedOperationalCost`. */
-export function calculateTotalCost(materialsCost: Money, fixedOperationalCost: Money): Money {
-  return materialsCost.plus(fixedOperationalCost);
+export interface CompositeProductPricingInput {
+  /** The `BillOfMaterials` lines, each with its Material's current package data. */
+  lines: readonly MaterialsCostLine[];
+  fixedOperationalCost: Money;
+  /** Whole basis points: 33,33% is `3333`, 100% is `10000`. */
+  profitMarginBasisPoints: number;
+  manualPrice: Money | null;
 }
 
-/** `suggestedPrice = totalCost × (1 + profitMargin / 100)`. `profitMargin` is a percentage, e.g. `35` for 35%. */
-export function calculateSuggestedPrice(totalCost: Money, profitMargin: number): Money {
-  return totalCost.times(1 + profitMargin / 100);
+export interface CompositeProductPricing {
+  materialsCost: Money;
+  totalCost: Money;
+  suggestedPrice: Money;
+  finalPrice: Money;
 }
 
-/** `finalPrice = manualPrice ?? suggestedPrice`. */
-export function calculateFinalPrice(suggestedPrice: Money, manualPrice: Money | null): Money {
-  return manualPrice ?? suggestedPrice;
+/**
+ * The pricing of a `CompositeProduct`, and the only place it is computed.
+ * The client previews this figure while the recipe is still being edited, so
+ * the order of operations below is a contract, not an implementation detail;
+ * the cases in `composite-product-pricing.spec.ts` are what both sides must
+ * reproduce to the cent.
+ *
+ *  1. `lineCost = packageCost × quantity ÷ packageQuantity`, per line,
+ *     multiplied before divided and rounded once (half away from zero).
+ *  2. `materialsCost = Σ lineCost` — the already rounded lines, summed.
+ *  3. `totalCost = materialsCost + fixedOperationalCost`. Exact, in cents.
+ *  4. `suggestedPrice = totalCost × (10 000 + profitMarginBasisPoints) ÷ 10 000`,
+ *     rounded once (half away from zero). The margin is an integer, so no
+ *     float is involved anywhere on the way.
+ *  5. `finalPrice = manualPrice ?? suggestedPrice`.
+ *
+ * Rounding happens in steps 1 and 4 only. The margin is applied to the total,
+ * never to each line: marking up per line rounds once per line, and the sum
+ * of those roundings is not the rounding of the sum.
+ */
+export function calculateCompositeProductPricing(
+  input: CompositeProductPricingInput,
+): CompositeProductPricing {
+  const materialsCost = calculateMaterialsCost(input.lines);
+  const totalCost = materialsCost.plus(input.fixedOperationalCost);
+  const suggestedPrice = applyMargin(totalCost, input.profitMarginBasisPoints);
+  const finalPrice = input.manualPrice ?? suggestedPrice;
+
+  return { materialsCost, totalCost, suggestedPrice, finalPrice };
 }

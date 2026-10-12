@@ -32,7 +32,7 @@ interface ValidationFieldError {
  * a client branching on them breaks silently otherwise: the screen just shows
  * untranslated English, on a path nobody is looking at.
  *
- * The table in docs/api-contract.md is the contract; this is what keeps the
+ * The published table of codes is the contract; this is what keeps the
  * running system matching it.
  */
 describe('Error contract (e2e)', () => {
@@ -76,7 +76,7 @@ describe('Error contract (e2e)', () => {
         name: `Bolo ${randomUUID()}`,
         description: null,
         fixedOperationalCost: '5.00',
-        profitMargin: 50,
+        profitMarginBasisPoints: 5000,
         billOfMaterials: [{ materialId, quantity: 120 }],
       })
       .expect(HttpStatus.CREATED);
@@ -211,7 +211,7 @@ describe('Error contract (e2e)', () => {
         .send({
           name: 'Bolo',
           fixedOperationalCost: '5.00',
-          profitMargin: 50,
+          profitMarginBasisPoints: 5000,
           billOfMaterials: [{ materialId: 'not-a-uuid', quantity: -1 }],
         })
         .expect(HttpStatus.BAD_REQUEST);

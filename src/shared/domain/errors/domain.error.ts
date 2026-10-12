@@ -10,8 +10,8 @@ import { toErrorCode } from './error-code';
  * - `code`, a stable identifier in SCREAMING_SNAKE_CASE derived from the
  *   class name. It is the public contract the client branches and translates
  *   on; `message` stays English and exists for the log. Changing a code is a
- *   breaking change, which is why it is derived from the class name and
- *   documented in docs/api-contract.md rather than typed in by hand.
+ *   breaking change, which is why it is derived from the class name rather
+ *   than typed in by hand.
  * - `details`, optional and typed per error: the few facts a screen needs to
  *   say something useful, as data instead of a sentence to parse. The type
  *   parameter is what keeps each error's shape honest at compile time.

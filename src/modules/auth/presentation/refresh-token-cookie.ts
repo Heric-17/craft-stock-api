@@ -11,8 +11,7 @@ export const REFRESH_TOKEN_COOKIE = 'craftstock_refresh_token';
  * The cookie's `Path`. Matches the `/auth` routes the three session endpoints
  * live under (`src/modules/auth/presentation/auth.controller.ts`), which is
  * also what keeps the cookie out of every business route — those
- * authenticate with `Authorization: Bearer` and never see it (see
- * docs/auth-contract.md).
+ * authenticate with `Authorization: Bearer` and never see it.
  *
  * If the API ever gains a global route prefix, this literal has to be
  * updated to match — a browser only sends a cookie to paths under its
@@ -39,8 +38,8 @@ function cookieOptions(config: RefreshTokenCookieConfig): CookieOptions {
     // 'lax', not 'strict': the cookie must still arrive when the user lands
     // on the SPA by following a link from elsewhere, which is exactly when a
     // silent refresh has to work. 'lax' requires the frontend and the API to
-    // be on the same registrable domain — docs/auth-contract.md spells out
-    // what that means for how an installation is deployed.
+    // be on the same registrable domain, which constrains how an installation
+    // is deployed.
     sameSite: 'lax',
     path: refreshTokenCookiePath(),
   };
@@ -48,8 +47,8 @@ function cookieOptions(config: RefreshTokenCookieConfig): CookieOptions {
 
 /**
  * Writes the refresh token cookie. Called on login and on every refresh,
- * which re-arms `maxAge` from scratch — a sliding session, registered as a
- * deliberate choice in docs/auth-contract.md.
+ * which re-arms `maxAge` from scratch — a sliding session, by deliberate
+ * choice.
  */
 export function setRefreshTokenCookie(
   response: Response,

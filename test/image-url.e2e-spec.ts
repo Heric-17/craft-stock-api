@@ -74,7 +74,7 @@ describe('Image URLs in responses (e2e)', () => {
         name: `Bolo ${randomUUID()}`,
         description: null,
         fixedOperationalCost: '5.00',
-        profitMargin: 50,
+        profitMarginBasisPoints: 5000,
         billOfMaterials: [],
       })
       .expect(HttpStatus.CREATED);

@@ -88,7 +88,7 @@ describe('Shopping list estimate (e2e)', () => {
       customerName: 'Maria',
       customerContact: null,
       paymentMethod: 'PIX',
-      items: items.map((item) => ({ ...item, marginPercent: 0 })),
+      items: items.map((item) => ({ ...item, marginBasisPoints: 0 })),
     });
     createdSaleIds.push(view.id);
     return view.id;

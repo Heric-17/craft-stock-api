@@ -39,7 +39,7 @@ export class CompositeProductsController {
       name: dto.name,
       description: dto.description ?? null,
       fixedOperationalCost: dto.fixedOperationalCost,
-      profitMargin: dto.profitMargin,
+      profitMarginBasisPoints: dto.profitMarginBasisPoints,
       manualPrice: dto.manualPrice ?? null,
       billOfMaterials: dto.billOfMaterials.map((item) => ({
         materialId: item.materialId,
@@ -69,7 +69,9 @@ export class CompositeProductsController {
     if (dto.description !== undefined) input.description = dto.description;
     if (dto.fixedOperationalCost !== undefined)
       input.fixedOperationalCost = dto.fixedOperationalCost;
-    if (dto.profitMargin !== undefined) input.profitMargin = dto.profitMargin;
+    if (dto.profitMarginBasisPoints !== undefined) {
+      input.profitMarginBasisPoints = dto.profitMarginBasisPoints;
+    }
     if (dto.manualPrice !== undefined) input.manualPrice = dto.manualPrice;
     if (dto.billOfMaterials !== undefined) {
       input.billOfMaterials = dto.billOfMaterials.map((item) => ({

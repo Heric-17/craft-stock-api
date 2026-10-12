@@ -11,7 +11,7 @@ function build(
     description: null,
     imageKey: null,
     fixedOperationalCost: Money.fromDecimalString('2.50'),
-    profitMargin: 35,
+    profitMarginBasisPoints: 3500,
     manualPrice: null,
     discontinuedAt: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -31,21 +31,33 @@ describe('CompositeProduct', () => {
     expect(() => build({ name: ' ' })).toThrow(InvalidCompositeProductError);
   });
 
-  it('rejects a negative profitMargin', () => {
-    expect(() => build({ profitMargin: -1 })).toThrow(InvalidCompositeProductError);
+  it('rejects a negative profitMarginBasisPoints', () => {
+    expect(() => build({ profitMarginBasisPoints: -100 })).toThrow(InvalidCompositeProductError);
+  });
+
+  it('rejects a margin that is not a whole number of basis points', () => {
+    expect(() => build({ profitMarginBasisPoints: 33.33 })).toThrow(InvalidCompositeProductError);
+    expect(() => build({ profitMarginBasisPoints: Number.NaN })).toThrow(
+      InvalidCompositeProductError,
+    );
+  });
+
+  it('accepts the largest margin the column holds, 999,99%, and rejects one more basis point', () => {
+    expect(build({ profitMarginBasisPoints: 99_999 }).profitMarginBasisPoints).toBe(99_999);
+    expect(() => build({ profitMarginBasisPoints: 100_000 })).toThrow(InvalidCompositeProductError);
   });
 
   describe('update', () => {
     it('applies changes on top of the current state, immutably', () => {
-      const product = build({ profitMargin: 35 });
+      const product = build({ profitMarginBasisPoints: 3500 });
       const updatedAt = new Date('2026-02-01T00:00:00Z');
 
-      const updated = product.update({ profitMargin: 40 }, updatedAt);
+      const updated = product.update({ profitMarginBasisPoints: 4000 }, updatedAt);
 
       expect(updated).not.toBe(product);
-      expect(updated.profitMargin).toBe(40);
+      expect(updated.profitMarginBasisPoints).toBe(4000);
       expect(updated.updatedAt).toEqual(updatedAt);
-      expect(product.profitMargin).toBe(35);
+      expect(product.profitMarginBasisPoints).toBe(3500);
     });
 
     it('clears manualPrice when explicitly set to null', () => {

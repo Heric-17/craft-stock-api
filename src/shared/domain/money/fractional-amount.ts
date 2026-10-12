@@ -17,8 +17,10 @@ const SUB_CENT_SCALE = 100;
  * amount of money use `Money.scaled`, which keeps the fraction of a cent
  * alive until there is a real total to round.
  *
- * Computed on integer cents rather than through a float, for the same reason
- * `Money` exists at all. Four places is a display decision and nothing else.
+ * Computed in integers by `Money.scaled`, so the fourth place is rounded by the
+ * same policy as every other figure in the system — half away from zero — and
+ * a tie is decided by the rule rather than by float division. Four places is a
+ * display decision and nothing else.
  */
 export function formatFractionalAmount(amount: Money, divisor: number): string {
   if (!Number.isFinite(divisor) || divisor === 0) {
@@ -27,7 +29,9 @@ export function formatFractionalAmount(amount: Money, divisor: number): string {
     );
   }
 
-  const scaled = Math.round((amount.toCents() * SUB_CENT_SCALE) / divisor);
+  // `scaled` hands back a `Money`, but what is counted here is hundredths of a
+  // cent: the figure is read back with `toCents` and never used as an amount.
+  const scaled = amount.scaled(SUB_CENT_SCALE, divisor).toCents();
   const sign = scaled < 0 ? '-' : '';
   const absolute = Math.abs(scaled);
   const unitScale = 10 ** DISPLAY_PLACES;

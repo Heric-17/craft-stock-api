@@ -1,4 +1,15 @@
-import { IsNumber, IsOptional, IsPositive, IsString, Min, MinLength } from 'class-validator';
+import {
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Max,
+  Min,
+  MinLength,
+} from 'class-validator';
+
+import { MAX_MARGIN_BASIS_POINTS } from '../../../../shared/domain/money/margin';
 
 /** Exactly one of `compositeProductId` / `materialId` must be sent — the service checks this, since it is a shape rule about the command, not a `SaleItem` invariant alone. */
 export class CreateSaleItemDto {
@@ -17,13 +28,14 @@ export class CreateSaleItemDto {
   quantity!: number;
 
   /**
-   * Percentage markup over the Material's `packageCost`, for a loose-Material
-   * line only. Optional here and required by the service, which is where the
+   * Markup over the Material's `packageCost` in whole basis points (`5000` is
+   * 50%, `0` sells at cost), for a loose-Material line only. Optional here and required by the service, which is where the
    * rule lives: it depends on which of the two references was sent, and `0`
    * is a valid value that has to be told apart from an absent one.
    */
   @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsInt()
   @Min(0)
-  marginPercent?: number;
+  @Max(MAX_MARGIN_BASIS_POINTS)
+  marginBasisPoints?: number;
 }

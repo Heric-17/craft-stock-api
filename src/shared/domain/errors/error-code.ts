@@ -6,8 +6,7 @@
  *
  * Derived rather than declared, so a new error class arrives with a code and
  * there is no second list to forget to update. The trade is that renaming a
- * class changes a published code — which is a contract change, and
- * docs/api-contract.md says so.
+ * class changes a published code, which is a contract change.
  *
  * The code exists because the messages are in English and the people using
  * this system are not: the frontend translates, and it must key that

@@ -160,3 +160,94 @@ describe('no production code writes to test/fixtures/', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * A derived monetary value that is stored goes stale the moment one of its
+ * inputs changes, and a result of a division is the worst of them: it is
+ * already rounded, and everything computed from it inherits the rounding.
+ * Prisma can only write columns the schema declares, so the schema is the
+ * place where this is decided once and for all.
+ */
+describe('no result of a monetary division is persisted', () => {
+  const schema = readFileSync(join(SOURCE_ROOT, '..', 'prisma', 'schema.prisma'), 'utf8');
+
+  function columns(): { model: string; column: string }[] {
+    const result: { model: string; column: string }[] = [];
+    let model: string | null = null;
+
+    for (const rawLine of schema.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      const opening = /^model\s+(\w+)\s*\{/.exec(line);
+
+      if (opening) {
+        model = opening[1];
+      } else if (line === '}') {
+        model = null;
+      } else if (model && /^\w+\s+/.test(line) && !line.startsWith('//')) {
+        result.push({ model, column: line.split(/\s+/)[0] });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Computed at read time, always: the cost of a unit of consumption, the
+   * cost and price of a composite product, the total of a line.
+   */
+  const DERIVED_COLUMNS = [
+    'unitCost',
+    'unitPrice',
+    'suggestedPrice',
+    'finalPrice',
+    'materialsCost',
+    'totalCost',
+    'lineCost',
+    'lineTotal',
+    'netValue',
+    'productionCapacity',
+    'bottleneck',
+    'lowStock',
+    'isActive',
+  ];
+
+  /**
+   * `PurchaseItem.unitPrice` is what the invoice printed, an input read from
+   * the note; and `allocatedDiscount` is persisted on purpose, because in
+   * `MANUAL` mode it is typed by the user, so it cannot be derived. Neither is a
+   * result computed here and stored.
+   */
+  const RECORDED_INPUTS = [{ model: 'PurchaseItem', column: 'unitPrice' }];
+
+  it('finds the columns to check', () => {
+    expect(columns().length).toBeGreaterThan(50);
+  });
+
+  it('declares no derived value as a column', () => {
+    const offenders = columns().filter(
+      ({ model, column }) =>
+        DERIVED_COLUMNS.includes(column) &&
+        !RECORDED_INPUTS.some((input) => input.model === model && input.column === column),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps a fractional cost as the fraction: the amount and the quantity it is divided over', () => {
+    const names = (model: string) =>
+      columns()
+        .filter((entry) => entry.model === model)
+        .map((entry) => entry.column);
+
+    expect(names('Material')).toEqual(expect.arrayContaining(['packageCost', 'packageQuantity']));
+    expect(names('SaleItem')).toEqual(
+      expect.arrayContaining(['priceBasisAmount', 'priceBasisQuantity']),
+    );
+  });
+
+  it('stores a margin only as the column that holds whole basis points of a percentage', () => {
+    const margins = columns().filter(({ column }) => /margin/i.test(column));
+
+    expect(margins).toEqual([{ model: 'CompositeProduct', column: 'profitMargin' }]);
+  });
+});

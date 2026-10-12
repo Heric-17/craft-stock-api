@@ -93,7 +93,7 @@ describe('Sales stock debit (e2e)', () => {
       paymentMethod: 'PIX',
       // A loose-Material line has to state its margin; these cases are about
       // the stock debit, so they sell at cost.
-      items: [{ materialId, quantity, marginPercent: 0 }],
+      items: [{ materialId, quantity, marginBasisPoints: 0 }],
     });
     createdSaleIds.push(view.id);
     return view;

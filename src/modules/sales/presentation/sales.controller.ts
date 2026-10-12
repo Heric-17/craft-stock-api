@@ -42,7 +42,7 @@ export class SalesController {
         compositeProductId: item.compositeProductId,
         materialId: item.materialId,
         quantity: item.quantity,
-        marginPercent: item.marginPercent,
+        marginBasisPoints: item.marginBasisPoints,
       })),
     });
   }
@@ -99,7 +99,7 @@ export class SalesController {
       compositeProductId: dto.compositeProductId,
       materialId: dto.materialId,
       quantity: dto.quantity,
-      marginPercent: dto.marginPercent,
+      marginBasisPoints: dto.marginBasisPoints,
     });
   }
 

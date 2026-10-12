@@ -118,7 +118,7 @@ function buildCreateInput(
     name: 'Bolo de cenoura',
     description: null,
     fixedOperationalCost: '2.50',
-    profitMargin: 35,
+    profitMarginBasisPoints: 3500,
     manualPrice: null,
     billOfMaterials: [],
     ...overrides,
@@ -163,7 +163,7 @@ describe('CompositeProductsService', () => {
       expect(created.finalPrice).toBe('3.00');
     });
 
-    it('applies no markup when profitMargin is zero', async () => {
+    it('applies no markup when profitMarginBasisPoints is zero', async () => {
       const { service, materials } = buildService();
       const flour = buildMaterial();
       await materials.save(flour);
@@ -172,7 +172,7 @@ describe('CompositeProductsService', () => {
         buildCreateInput({
           billOfMaterials: [{ materialId: flour.id, quantity: 120 }],
           fixedOperationalCost: '0.00',
-          profitMargin: 0,
+          profitMarginBasisPoints: 0,
         }),
       );
 
@@ -232,7 +232,7 @@ describe('CompositeProductsService', () => {
 
       await materials.save(flour.discontinue(new Date('2026-01-10T00:00:00Z')));
 
-      const view = await service.update(created.id, { profitMargin: 40 });
+      const view = await service.update(created.id, { profitMarginBasisPoints: 4000 });
 
       expect(view.billOfMaterials).toHaveLength(1);
       expect(view.billOfMaterials[0].materialId).toBe(flour.id);

@@ -15,8 +15,8 @@ export interface CreateCompositeProductInput {
   name: string;
   description: string | null;
   fixedOperationalCost: string;
-  /** Percentage, e.g. `35` for 35%. */
-  profitMargin: number;
+  /** Whole basis points: `3500` for 35%, `3333` for 33,33%. */
+  profitMarginBasisPoints: number;
   manualPrice: string | null;
   billOfMaterials: BomItemInput[];
 }
@@ -31,7 +31,7 @@ export interface UpdateCompositeProductInput {
   name?: string;
   description?: string | null;
   fixedOperationalCost?: string;
-  profitMargin?: number;
+  profitMarginBasisPoints?: number;
   manualPrice?: string | null;
   billOfMaterials?: BomItemInput[];
 }
@@ -72,7 +72,8 @@ export interface CompositeProductView {
   description: string | null;
   imageUrl: string | null;
   fixedOperationalCost: string;
-  profitMargin: number;
+  /** Whole basis points, the same representation the input takes. The screen shows it as a percentage. */
+  profitMarginBasisPoints: number;
   manualPrice: string | null;
   materialsCost: string;
   totalCost: string;

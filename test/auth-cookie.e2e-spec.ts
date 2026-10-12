@@ -281,8 +281,7 @@ describe('Session cookie (e2e)', () => {
   /**
    * The scope of the change: business routes were not touched. A route that
    * started accepting the cookie would also be a route a forged cross-site
-   * request could reach, which is the premise the CSRF decision rests on
-   * (docs/auth-contract.md §5).
+   * request could reach, which is the premise the CSRF decision rests on.
    */
   describe('business routes do not depend on the cookie', () => {
     it('refuses a business route that presents only the session cookie', async () => {
