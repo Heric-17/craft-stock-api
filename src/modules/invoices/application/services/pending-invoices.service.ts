@@ -1,8 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
-import type { PendingInvoiceStatus } from '../../domain/pending-invoice-status.enum';
-import type { PendingInvoiceView } from '../dto/invoices.dto';
+import type { PendingInvoiceListInput, PendingInvoicePageView } from '../dto/invoices.dto';
 import { InvoiceViewMapper } from '../mappers/invoice-view.mapper';
 
 /**
@@ -16,13 +15,21 @@ import { InvoiceViewMapper } from '../mappers/invoice-view.mapper';
 export class PendingInvoicesService {
   constructor(@Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork) {}
 
-  async list(status?: PendingInvoiceStatus): Promise<PendingInvoiceView[]> {
-    const invoices = await this.unitOfWork.runInTransaction((ctx) =>
-      status === undefined
-        ? ctx.pendingInvoices.findAll()
-        : ctx.pendingInvoices.findByStatus(status),
+  /** One page of the queue, newest first, optionally narrowed to one status. */
+  async list(input: PendingInvoiceListInput): Promise<PendingInvoicePageView> {
+    const page = await this.unitOfWork.runInTransaction((ctx) =>
+      ctx.pendingInvoices.findPage({
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        limit: input.limit,
+        offset: input.offset,
+      }),
     );
 
-    return invoices.map((invoice) => InvoiceViewMapper.toPendingView(invoice));
+    return {
+      items: page.invoices.map((invoice) => InvoiceViewMapper.toPendingView(invoice)),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+    };
   }
 }

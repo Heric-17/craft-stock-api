@@ -41,7 +41,7 @@ export class NewMaterialDto {
   consumptionUnit!: ConsumptionUnit;
 
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 3 })
   @Min(0)
   minimumStockAlert?: number;
 }
@@ -71,7 +71,7 @@ export class ClassifyInvoiceItemDto {
    * item was rung up, not how it is consumed.
    */
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 3 })
   @IsPositive()
   packageQuantity?: number;
 }

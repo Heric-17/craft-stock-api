@@ -8,13 +8,14 @@ import { AuthenticationService } from '../application/services/authentication.se
 import { InvalidRefreshTokenError } from '../domain/auth.error';
 import { LoginDto } from './dto/login.dto';
 import {
+  AUTH_ROUTE,
   clearRefreshTokenCookie,
   readRefreshTokenCookie,
   setRefreshTokenCookie,
   type RefreshTokenCookieConfig,
 } from './refresh-token-cookie';
 
-@Controller('auth')
+@Controller(AUTH_ROUTE)
 export class AuthController {
   constructor(
     private readonly authentication: AuthenticationService,

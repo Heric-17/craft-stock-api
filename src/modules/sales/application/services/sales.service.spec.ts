@@ -472,11 +472,43 @@ describe('SalesService', () => {
       await service.updatePaymentStatus(a.id, 'PAID');
       await service.updateProductionStatus(b.id, 'ASSEMBLED');
 
-      const paid = await service.list({ paymentStatus: 'PAID' });
-      expect(paid.map((sale) => sale.id)).toEqual([a.id]);
+      const paid = await service.list({ paymentStatus: 'PAID', limit: 20, offset: 0 });
+      expect(paid.items.map((sale) => sale.id)).toEqual([a.id]);
+      expect(paid.total).toBe(1);
 
-      const assembled = await service.list({ productionStatus: 'ASSEMBLED' });
-      expect(assembled.map((sale) => sale.id)).toEqual([b.id]);
+      const assembled = await service.list({ productionStatus: 'ASSEMBLED', limit: 20, offset: 0 });
+      expect(assembled.items.map((sale) => sale.id)).toEqual([b.id]);
+      expect(assembled.total).toBe(1);
+    });
+
+    it('pages the history and reports the size of the whole filtered set', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial();
+      await materials.save(flour);
+      const ids: string[] = [];
+      for (let index = 0; index < 5; index++) {
+        const sale = await service.create(
+          buildCreateInput({
+            items: [{ materialId: flour.id, quantity: 1, marginBasisPoints: 0 }],
+          }),
+        );
+        ids.push(sale.id);
+      }
+
+      const first = await service.list({ limit: 2, offset: 0 });
+      const second = await service.list({ limit: 2, offset: 2 });
+      const last = await service.list({ limit: 2, offset: 4 });
+      const beyond = await service.list({ limit: 2, offset: 10 });
+
+      expect(first.items).toHaveLength(2);
+      expect(second.items).toHaveLength(2);
+      expect(last.items).toHaveLength(1);
+      expect(first.total).toBe(5);
+      expect(beyond).toMatchObject({ items: [], total: 5, limit: 2, offset: 10 });
+
+      // Every sale appears exactly once across the pages.
+      const seen = [...first.items, ...second.items, ...last.items].map((sale) => sale.id);
+      expect([...seen].sort()).toEqual([...ids].sort());
     });
   });
 

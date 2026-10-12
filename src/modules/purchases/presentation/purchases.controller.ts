@@ -21,7 +21,8 @@ import type {
 import { PurchaseAnalyticsService } from '../application/services/purchase-analytics.service';
 import { PurchaseEditingService } from '../application/services/purchase-editing.service';
 import { PurchasesService } from '../application/services/purchases.service';
-import { DEFAULT_PURCHASE_PAGE_SIZE, ListPurchasesQueryDto } from './dto/list-purchases-query.dto';
+import { DEFAULT_PAGE_SIZE } from '../../../shared/presentation/http/pagination-query.dto';
+import { ListPurchasesQueryDto } from './dto/list-purchases-query.dto';
 import {
   ChangePurchaseItemDto,
   PurchaseItemDto,
@@ -51,7 +52,7 @@ export class PurchasesController {
       ...(query.from !== undefined ? { from: new Date(query.from) } : {}),
       ...(query.to !== undefined ? { to: new Date(query.to) } : {}),
       ...(query.establishmentId !== undefined ? { establishmentId: query.establishmentId } : {}),
-      limit: query.limit ?? DEFAULT_PURCHASE_PAGE_SIZE,
+      limit: query.limit ?? DEFAULT_PAGE_SIZE,
       offset: query.offset ?? 0,
     });
   }

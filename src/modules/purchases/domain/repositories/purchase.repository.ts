@@ -44,7 +44,6 @@ export interface PurchaseRepository {
   findById(id: string): Promise<Purchase | null>;
   /** Used to deduplicate NFC-e imports against the 44-digit access key. */
   findByAccessKey(accessKey: string): Promise<Purchase | null>;
-  findAll(): Promise<Purchase[]>;
   /** One page of the history, filtered by period and by establishment. */
   findPage(query: PurchaseListQuery): Promise<PurchasePage>;
   /** Persists the root and its lines in one go, removing lines that are gone. */

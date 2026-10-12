@@ -1,5 +1,7 @@
 import type { CookieOptions, Request, Response } from 'express';
 
+import { apiPath } from '../../../shared/presentation/http/api-prefix';
+
 /**
  * The cookie the refresh token travels in. Prefixed with the product name so
  * it cannot collide with another application's cookie on a shared parent
@@ -7,19 +9,21 @@ import type { CookieOptions, Request, Response } from 'express';
  */
 export const REFRESH_TOKEN_COOKIE = 'craftstock_refresh_token';
 
+/** The route segment the three session endpoints live under; the controller and the cookie's `Path` both read it. */
+export const AUTH_ROUTE = 'auth';
+
 /**
- * The cookie's `Path`. Matches the `/auth` routes the three session endpoints
- * live under (`src/modules/auth/presentation/auth.controller.ts`), which is
- * also what keeps the cookie out of every business route — those
- * authenticate with `Authorization: Bearer` and never see it.
+ * The cookie's `Path`: the auth routes, with the API's global prefix in front
+ * when there is one. That is also what keeps the cookie out of every business
+ * route — those authenticate with `Authorization: Bearer` and never see it.
  *
- * If the API ever gains a global route prefix, this literal has to be
- * updated to match — a browser only sends a cookie to paths under its
- * `Path`, so letting the two drift apart would mean the cookie silently
- * stops being sent, with nothing failing loudly to say why.
+ * Derived from the same route segment and the same prefix the app is
+ * configured with, never typed in again: a browser only sends a cookie to
+ * paths under its `Path`, so letting the two drift apart would mean the cookie
+ * silently stops being sent, with nothing failing loudly to say why.
  */
 export function refreshTokenCookiePath(): string {
-  return '/auth';
+  return apiPath(AUTH_ROUTE);
 }
 
 export interface RefreshTokenCookieConfig {

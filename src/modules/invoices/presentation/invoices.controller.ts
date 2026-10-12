@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 
-import type { ImportedInvoiceView, PendingInvoiceView } from '../application/dto/invoices.dto';
+import { DEFAULT_PAGE_SIZE } from '../../../shared/presentation/http/pagination-query.dto';
+import type { ImportedInvoiceView, PendingInvoicePageView } from '../application/dto/invoices.dto';
 import { InvoiceImportFacade } from '../application/facades/invoice-import.facade';
 import { InvoiceClassificationService } from '../application/services/invoice-classification.service';
 import { PendingInvoicesService } from '../application/services/pending-invoices.service';
@@ -35,11 +36,16 @@ export class InvoicesController {
   /**
    * The capture queue. Scanning happens at the till, on a phone; finishing
    * the import happens from this list, on whatever device, whenever the
-   * portal is answering.
+   * portal is answering. Paginated, newest first, optionally narrowed to one
+   * status.
    */
   @Get('pending')
-  listPending(@Query() query: ListPendingInvoicesQueryDto): Promise<PendingInvoiceView[]> {
-    return this.pendingInvoices.list(query.status);
+  listPending(@Query() query: ListPendingInvoicesQueryDto): Promise<PendingInvoicePageView> {
+    return this.pendingInvoices.list({
+      ...(query.status !== undefined ? { status: query.status } : {}),
+      limit: query.limit ?? DEFAULT_PAGE_SIZE,
+      offset: query.offset ?? 0,
+    });
   }
 
   /** Picks one queued capture back up — typically one parked as `UNSTABLE`. */

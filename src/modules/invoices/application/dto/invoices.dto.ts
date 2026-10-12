@@ -1,3 +1,4 @@
+import type { PageView } from '../../../../shared/application/pagination/page-view';
 import type { ConsumptionUnit } from '../../../materials/domain/consumption-unit';
 import type { DiscountAllocationMode } from '../../../purchases/domain/discount-allocation-mode';
 import type { PendingInvoiceStatus } from '../../domain/pending-invoice-status.enum';
@@ -11,6 +12,14 @@ export interface PendingInvoiceView {
   purchaseId: string | null;
   lastError: string | null;
   createdAt: Date;
+}
+
+export type PendingInvoicePageView = PageView<PendingInvoiceView>;
+
+export interface PendingInvoiceListInput {
+  status?: PendingInvoiceStatus;
+  limit: number;
+  offset: number;
 }
 
 /**

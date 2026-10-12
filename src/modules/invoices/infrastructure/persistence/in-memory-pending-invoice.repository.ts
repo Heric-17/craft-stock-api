@@ -1,6 +1,9 @@
 import type { PendingInvoice } from '../../domain/pending-invoice.entity';
-import type { PendingInvoiceStatus } from '../../domain/pending-invoice-status.enum';
-import type { PendingInvoiceRepository } from '../../domain/repositories/pending-invoice.repository';
+import type {
+  PendingInvoiceListQuery,
+  PendingInvoicePage,
+  PendingInvoiceRepository,
+} from '../../domain/repositories/pending-invoice.repository';
 
 /** In-memory `PendingInvoiceRepository` for `application/` tests. Never mocks Prisma. */
 export class InMemoryPendingInvoiceRepository implements PendingInvoiceRepository {
@@ -10,16 +13,18 @@ export class InMemoryPendingInvoiceRepository implements PendingInvoiceRepositor
     return Promise.resolve(this.invoices.get(id) ?? null);
   }
 
-  async findByStatus(status: PendingInvoiceStatus): Promise<PendingInvoice[]> {
-    return Promise.resolve(
-      [...this.invoices.values()].filter((invoice) => invoice.status === status),
-    );
-  }
+  /** Same filter and same order as the Prisma one: newest first, ties broken on id. */
+  async findPage(query: PendingInvoiceListQuery): Promise<PendingInvoicePage> {
+    const matching = [...this.invoices.values()]
+      .filter((invoice) => query.status === undefined || invoice.status === query.status)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
 
-  async findAll(): Promise<PendingInvoice[]> {
-    return Promise.resolve(
-      [...this.invoices.values()].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
-    );
+    return Promise.resolve({
+      invoices: matching.slice(query.offset, query.offset + query.limit),
+      total: matching.length,
+      limit: query.limit,
+      offset: query.offset,
+    });
   }
 
   async findByUrl(url: string): Promise<PendingInvoice | null> {

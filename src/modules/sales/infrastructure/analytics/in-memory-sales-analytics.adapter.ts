@@ -20,7 +20,7 @@ export class InMemorySalesAnalyticsAdapter implements SalesAnalyticsPort {
   async salesDataset(query: SalesDatasetQuery): Promise<SalesDataset> {
     const summaries: SaleSummary[] = [];
 
-    for (const sale of await this.sales.findAll()) {
+    for (const sale of this.sales.all()) {
       const items = await this.sales.findItemsBySaleId(sale.id);
 
       summaries.push({

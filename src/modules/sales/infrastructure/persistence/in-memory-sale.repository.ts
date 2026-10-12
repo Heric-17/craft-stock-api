@@ -1,7 +1,11 @@
 import type { Sale } from '../../domain/sale.entity';
 import type { SaleItem } from '../../domain/sale-item.entity';
 import type { StockMovementSnapshot } from '../../domain/stock-movement-snapshot.entity';
-import type { SaleRepository } from '../../domain/repositories/sale.repository';
+import type {
+  SaleListQuery,
+  SalePage,
+  SaleRepository,
+} from '../../domain/repositories/sale.repository';
 
 /** In-memory `SaleRepository` for `application/` tests. Never mocks Prisma. */
 export class InMemorySaleRepository implements SaleRepository {
@@ -13,8 +17,32 @@ export class InMemorySaleRepository implements SaleRepository {
     return Promise.resolve(this.sales.get(id) ?? null);
   }
 
-  async findAll(): Promise<Sale[]> {
-    return Promise.resolve([...this.sales.values()]);
+  /** Same filters and same order as the Prisma one: newest first, ties broken on id. */
+  async findPage(query: SaleListQuery): Promise<SalePage> {
+    const matching = [...this.sales.values()]
+      .filter(
+        (sale) =>
+          (query.paymentStatus === undefined || sale.paymentStatus === query.paymentStatus) &&
+          (query.productionStatus === undefined ||
+            sale.productionStatus === query.productionStatus),
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+
+    return Promise.resolve({
+      sales: matching.slice(query.offset, query.offset + query.limit),
+      total: matching.length,
+      limit: query.limit,
+      offset: query.offset,
+    });
+  }
+
+  /**
+   * Every sale held, in no particular order. Not part of `SaleRepository`: no
+   * production path loads the whole history, and this exists only so the
+   * in-memory analytics adapter can fold the sales it was handed in a test.
+   */
+  all(): Sale[] {
+    return [...this.sales.values()];
   }
 
   async save(sale: Sale): Promise<void> {

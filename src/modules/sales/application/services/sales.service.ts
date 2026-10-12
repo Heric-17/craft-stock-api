@@ -56,6 +56,7 @@ import type {
   CreateSaleInput,
   CreateSaleItemInput,
   SaleListFilter,
+  SalePageView,
   SaleView,
   ShoppingListLineView,
   ShoppingListView,
@@ -108,26 +109,23 @@ export class SalesService {
   }
 
   /** Case 4: list filtered by either or both independent status axes. */
-  async list(filter: SaleListFilter = {}): Promise<SaleView[]> {
-    const sales = await this.sales.findAll();
-    const views: SaleView[] = [];
+  async list(filter: SaleListFilter): Promise<SalePageView> {
+    const page = await this.sales.findPage({
+      ...(filter.paymentStatus !== undefined ? { paymentStatus: filter.paymentStatus } : {}),
+      ...(filter.productionStatus !== undefined
+        ? { productionStatus: filter.productionStatus }
+        : {}),
+      limit: filter.limit,
+      offset: filter.offset,
+    });
+    const items: SaleView[] = [];
 
-    for (const sale of sales) {
-      if (filter.paymentStatus !== undefined && sale.paymentStatus !== filter.paymentStatus) {
-        continue;
-      }
-      if (
-        filter.productionStatus !== undefined &&
-        sale.productionStatus !== filter.productionStatus
-      ) {
-        continue;
-      }
-
-      const items = await this.sales.findItemsBySaleId(sale.id);
-      views.push(SaleViewMapper.toView(sale, items));
+    for (const sale of page.sales) {
+      const saleItems = await this.sales.findItemsBySaleId(sale.id);
+      items.push(SaleViewMapper.toView(sale, saleItems));
     }
 
-    return views;
+    return { items, total: page.total, limit: page.limit, offset: page.offset };
   }
 
   /** Case 2: add a new line to a Sale still in PENDING production. */

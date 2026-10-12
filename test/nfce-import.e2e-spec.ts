@@ -182,8 +182,8 @@ describe('NFC-e import (e2e)', () => {
 
     await expect(imports.importFromUrl(captureUrl)).rejects.toThrow(InvoiceSourceUnavailableError);
 
-    const queued = await pendingInvoices.list('UNSTABLE');
-    const parked = queued.find((entry) => entry.url === captureUrl);
+    const queued = await pendingInvoices.list({ status: 'UNSTABLE', limit: 100, offset: 0 });
+    const parked = queued.items.find((entry) => entry.url === captureUrl);
 
     expect(parked?.status).toBe('UNSTABLE');
     expect(parked?.attemptCount).toBe(1);
@@ -195,9 +195,9 @@ describe('NFC-e import (e2e)', () => {
    */
   it('finishes a parked capture when it is reprocessed', async () => {
     const captureUrl = capturedUrls[capturedUrls.length - 1];
-    const [parked] = (await pendingInvoices.list('UNSTABLE')).filter(
-      (entry) => entry.url === captureUrl,
-    );
+    const [parked] = (
+      await pendingInvoices.list({ status: 'UNSTABLE', limit: 100, offset: 0 })
+    ).items.filter((entry) => entry.url === captureUrl);
 
     http.next = { body: fixture('rs-nota-com-desconto') };
 
@@ -206,9 +206,9 @@ describe('NFC-e import (e2e)', () => {
 
     expect(view.grossTotal).toBe('20.45');
 
-    const [resumed] = (await pendingInvoices.list('IMPORTED')).filter(
-      (entry) => entry.id === parked.id,
-    );
+    const [resumed] = (
+      await pendingInvoices.list({ status: 'IMPORTED', limit: 100, offset: 0 })
+    ).items.filter((entry) => entry.id === parked.id);
     expect(resumed.purchaseId).toBe(view.purchaseId);
   });
 

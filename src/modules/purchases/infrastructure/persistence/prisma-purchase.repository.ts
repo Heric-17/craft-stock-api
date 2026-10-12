@@ -28,14 +28,6 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
     return row ? PurchaseMapper.toDomain(row) : null;
   }
 
-  async findAll(): Promise<Purchase[]> {
-    const rows = await this.prisma.purchase.findMany({
-      orderBy: { purchaseDate: 'desc' },
-      include: { items: true },
-    });
-    return rows.map((row) => PurchaseMapper.toDomain(row));
-  }
-
   /**
    * One page of the history, newest first, with the size of the whole
    * filtered set beside it.

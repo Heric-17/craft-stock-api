@@ -9,6 +9,7 @@ import {
   UPLOADS_PUBLIC_PATH,
 } from '../../domain/storage/image-delivery';
 import { CORRELATION_ID_HEADER } from '../middleware/request-context.middleware';
+import { API_GLOBAL_PREFIX } from './api-prefix';
 import { resolveCorsOrigins } from './cors-origins';
 
 const ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
@@ -19,6 +20,10 @@ const PREFLIGHT_MAX_AGE_SECONDS = 86_400;
 
 export function configureApp(app: NestExpressApplication, env: EnvService): void {
   app.use(cookieParser());
+
+  if (API_GLOBAL_PREFIX.length > 0) {
+    app.setGlobalPrefix(API_GLOBAL_PREFIX);
+  }
 
   app.enableCors({
     origin: resolveCorsOrigins(env.get('CORS_ORIGINS'), env.isProduction),

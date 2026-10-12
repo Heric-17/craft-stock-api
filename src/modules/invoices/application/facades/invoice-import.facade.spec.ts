@@ -26,6 +26,8 @@ import type {
   InvoiceProvider,
   InvoiceProviderFactory,
 } from '../../domain/providers/invoice-provider';
+import type { PendingInvoice } from '../../domain/pending-invoice.entity';
+import type { PendingInvoiceStatus } from '../../domain/pending-invoice-status.enum';
 import { InMemoryPendingInvoiceRepository } from '../../infrastructure/persistence/in-memory-pending-invoice.repository';
 import { ScrapingRsProvider } from '../../infrastructure/providers/scraping-rs.provider';
 import { InvoiceImportFacade } from './invoice-import.facade';
@@ -36,6 +38,20 @@ const URL =
 
 function fixture(name: string): string {
   return readFileSync(join(FIXTURES, `${name}.html`), 'utf8');
+}
+
+/** Every capture in the queue, optionally of one status, read the way the list route reads them. */
+async function captured(
+  repository: InMemoryPendingInvoiceRepository,
+  status?: PendingInvoiceStatus,
+): Promise<PendingInvoice[]> {
+  const page = await repository.findPage({
+    ...(status !== undefined ? { status } : {}),
+    limit: 100,
+    offset: 0,
+  });
+
+  return page.invoices;
 }
 
 function silentLogger(): StructuredLogger {
@@ -189,7 +205,7 @@ describe('InvoiceImportFacade, importing a note', () => {
     );
 
     const view = await facade.importFromUrl(URL);
-    const [pending] = await pendingInvoices.findByStatus('IMPORTED');
+    const [pending] = await captured(pendingInvoices, 'IMPORTED');
 
     expect(pending.purchaseId).toBe(view.purchaseId);
     expect(pending.url).toBe(URL);
@@ -204,7 +220,7 @@ describe('InvoiceImportFacade, importing a note', () => {
 
     // The capture survived the failure, which is what lets it be retried from
     // another device later.
-    expect(await pendingInvoices.findAll()).toHaveLength(1);
+    expect(await captured(pendingInvoices)).toHaveLength(1);
   });
 
   /**
@@ -264,7 +280,7 @@ describe('InvoiceImportFacade, deduplication by access key', () => {
     await expect(facade.importFromUrl(URL)).rejects.toMatchObject({
       existingPurchaseId: first.purchaseId,
     });
-    expect(await purchases.findAll()).toHaveLength(1);
+    expect(purchases.all()).toHaveLength(1);
   });
 
   it('deduplicates across different capture URLs carrying the same key', async () => {
@@ -277,7 +293,7 @@ describe('InvoiceImportFacade, deduplication by access key', () => {
     await expect(facade.importFromUrl(`${URL}&via=outro-aparelho`)).rejects.toThrow(
       DuplicateInvoiceError,
     );
-    expect(await purchases.findAll()).toHaveLength(1);
+    expect(purchases.all()).toHaveLength(1);
   });
 });
 
@@ -297,7 +313,7 @@ describe('InvoiceImportFacade, when the portal is unavailable', () => {
 
     await expect(facade.importFromUrl(URL)).rejects.toThrow(InvoiceSourceUnavailableError);
 
-    const [pending] = await pendingInvoices.findByStatus('UNSTABLE');
+    const [pending] = await captured(pendingInvoices, 'UNSTABLE');
     expect(pending.status).toBe('UNSTABLE');
     expect(pending.attemptCount).toBe(1);
     expect(pending.lastError).toContain('did not answer after 3 attempts');
@@ -322,7 +338,7 @@ describe('InvoiceImportFacade, when the portal is unavailable', () => {
     const { facade, pendingInvoices } = buildFacade(http);
 
     await expect(facade.importFromUrl(URL)).rejects.toThrow(InvoiceSourceUnavailableError);
-    const [parked] = await pendingInvoices.findByStatus('UNSTABLE');
+    const [parked] = await captured(pendingInvoices, 'UNSTABLE');
 
     http.calls = 0;
     (http as unknown as { script: unknown[] }).script = [{ body: fixture('rs-nota-completa') }];
@@ -339,7 +355,7 @@ describe('InvoiceImportFacade, when the portal is unavailable', () => {
     );
 
     await facade.importFromUrl(URL);
-    const [imported] = await pendingInvoices.findByStatus('IMPORTED');
+    const [imported] = await captured(pendingInvoices, 'IMPORTED');
 
     await expect(facade.reprocess(imported.id)).rejects.toThrow(DuplicateInvoiceError);
   });
@@ -367,7 +383,7 @@ describe('InvoiceImportFacade, when the page is not a note', () => {
 
     await expect(facade.importFromUrl(URL)).rejects.toThrow(InvoiceStructureChangedError);
 
-    const [pending] = await pendingInvoices.findByStatus('PENDING');
+    const [pending] = await captured(pendingInvoices, 'PENDING');
     expect(pending.attemptCount).toBe(1);
     expect(pending.lastError).toContain('not an invoice');
   });
@@ -392,7 +408,7 @@ describe('InvoiceImportFacade, when the page is not a note', () => {
     );
 
     await expect(facade.importFromUrl(URL)).rejects.toThrow(InvoiceStructureChangedError);
-    expect(await purchases.findAll()).toHaveLength(0);
+    expect(purchases.all()).toHaveLength(0);
   });
 });
 

@@ -1,6 +1,8 @@
 import type { CookieOptions, Request, Response } from 'express';
 
+import { apiPath, joinApiPath } from '../../../shared/presentation/http/api-prefix';
 import {
+  AUTH_ROUTE,
   REFRESH_TOKEN_COOKIE,
   clearRefreshTokenCookie,
   readRefreshTokenCookie,
@@ -39,8 +41,16 @@ function recorder(): { response: Response; set: RecordedCookie[]; cleared: Recor
 const config = { secure: true, maxAgeSeconds: 2_592_000 };
 
 describe('refreshTokenCookiePath', () => {
-  it('matches the path the auth routes live under', () => {
-    expect(refreshTokenCookiePath()).toBe('/auth');
+  it('is the auth route behind the global prefix, derived and not typed in again', () => {
+    expect(refreshTokenCookiePath()).toBe(apiPath(AUTH_ROUTE));
+  });
+
+  it('follows a global prefix when the API gains one', () => {
+    // With no prefix today this is the same string; the point is that the
+    // cookie path is built by the join, so a prefix moves it along.
+    expect(joinApiPath('api', AUTH_ROUTE)).toBe('/api/auth');
+    expect(joinApiPath('/api/', AUTH_ROUTE)).toBe('/api/auth');
+    expect(joinApiPath('', AUTH_ROUTE)).toBe('/auth');
   });
 });
 

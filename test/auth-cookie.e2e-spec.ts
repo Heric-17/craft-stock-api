@@ -85,18 +85,32 @@ describe('Session cookie (e2e)', () => {
     });
 
     /**
-     * Checked against the real auth routes' own URLs, not just the literal
-     * the cookie module hardcodes — so a mismatch between the two would show
-     * up here even if nobody reads the cookie module's source.
+     * Checked against the real routes, not against the string the cookie
+     * module computes: the login request itself is made to the route's URL,
+     * the cookie's `Path` is read back out of its response, and the refresh
+     * route is then reached by following that `Path`. A `Path` that drifted
+     * from the routes would send nothing, so nothing here could pass.
      */
     it('scopes the cookie to a path the auth routes actually live under', async () => {
-      const cookie = parseRefreshCookie(await registerAndLogin());
-      const path = cookie?.attributes.path;
+      const login = await registerAndLogin();
+      const cookie = parseRefreshCookie(login);
+      const path = cookie?.attributes.path as string;
 
       expect(path).toBeDefined();
-      expect('/auth/refresh'.startsWith(path as string)).toBe(true);
+      // The URL the login request really went to, as the server saw it.
+      const loginUrl = new URL((login.request as unknown as { url: string }).url).pathname;
+
+      expect(loginUrl.startsWith(`${path}/`)).toBe(true);
+      expect(`${path}/refresh`.startsWith(`${path}/`)).toBe(true);
+
+      // Follow the cookie's own Path to the refresh route: it has to be there.
+      await request(server)
+        .post(`${path}/refresh`)
+        .set('Cookie', refreshCookieHeader(requireRefreshToken(login)))
+        .expect(HttpStatus.OK);
+
       // And narrow enough to stay off the business routes.
-      expect('/materials'.startsWith(path as string)).toBe(false);
+      expect('/materials'.startsWith(path)).toBe(false);
     });
 
     it('gives the cookie the refresh token lifetime', async () => {

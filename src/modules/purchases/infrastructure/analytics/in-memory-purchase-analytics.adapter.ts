@@ -31,12 +31,12 @@ interface Accumulator extends SpendingTotals {
 export class InMemoryPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
   constructor(private readonly purchases: InMemoryPurchaseRepository) {}
 
-  async spendingDataset(query: SpendingDatasetQuery): Promise<SpendingDataset> {
+  spendingDataset(query: SpendingDatasetQuery): Promise<SpendingDataset> {
     const byPeriod = new Map<string, Accumulator>();
     const byEstablishment = new Map<string, Accumulator>();
     const byStockMaterial = new Map<string, Accumulator>();
 
-    for (const purchase of await this.purchases.findAll()) {
+    for (const purchase of this.purchases.all()) {
       if (!this.isInScope(purchase, query)) {
         continue;
       }
@@ -95,7 +95,7 @@ export class InMemoryPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
       );
     }
 
-    return {
+    return Promise.resolve({
       from: query.from,
       to: query.to,
       granularity: query.granularity,
@@ -105,7 +105,7 @@ export class InMemoryPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
         byStockMaterial.get('true'),
         byStockMaterial.get('false'),
       ),
-    };
+    });
   }
 
   private isInScope(purchase: Purchase, query: SpendingDatasetQuery): boolean {

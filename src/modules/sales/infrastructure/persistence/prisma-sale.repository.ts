@@ -5,7 +5,11 @@ import type { Prisma } from '../../../../shared/infrastructure/prisma/generated/
 import type { Sale } from '../../domain/sale.entity';
 import type { SaleItem } from '../../domain/sale-item.entity';
 import type { StockMovementSnapshot } from '../../domain/stock-movement-snapshot.entity';
-import type { SaleRepository } from '../../domain/repositories/sale.repository';
+import type {
+  SaleListQuery,
+  SalePage,
+  SaleRepository,
+} from '../../domain/repositories/sale.repository';
 import { SaleMapper } from './mappers/sale.mapper';
 import { SaleItemMapper } from './mappers/sale-item.mapper';
 import { StockMovementSnapshotMapper } from './mappers/stock-movement-snapshot.mapper';
@@ -19,9 +23,30 @@ export class PrismaSaleRepository implements SaleRepository {
     return row ? SaleMapper.toDomain(row) : null;
   }
 
-  async findAll(): Promise<Sale[]> {
-    const rows = await this.prisma.sale.findMany({ orderBy: { createdAt: 'desc' } });
-    return rows.map((row) => SaleMapper.toDomain(row));
+  async findPage(query: SaleListQuery): Promise<SalePage> {
+    const where = {
+      ...(query.paymentStatus !== undefined ? { paymentStatus: query.paymentStatus } : {}),
+      ...(query.productionStatus !== undefined ? { productionStatus: query.productionStatus } : {}),
+    };
+
+    // The count is its own query over the same filter: the page is by
+    // definition not the whole set, so `total` cannot be folded out of it.
+    const [rows, total] = await Promise.all([
+      this.prisma.sale.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: query.offset,
+        take: query.limit,
+      }),
+      this.prisma.sale.count({ where }),
+    ]);
+
+    return {
+      sales: rows.map((row) => SaleMapper.toDomain(row)),
+      total,
+      limit: query.limit,
+      offset: query.offset,
+    };
   }
 
   async save(sale: Sale): Promise<void> {

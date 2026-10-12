@@ -11,7 +11,13 @@ import {
   Query,
 } from '@nestjs/common';
 
-import type { SaleView, SalesDatasetView, ShoppingListView } from '../application/dto/sales.dto';
+import { DEFAULT_PAGE_SIZE } from '../../../shared/presentation/http/pagination-query.dto';
+import type {
+  SalePageView,
+  SaleView,
+  SalesDatasetView,
+  ShoppingListView,
+} from '../application/dto/sales.dto';
 import { SalesAnalyticsService } from '../application/services/sales-analytics.service';
 import { SalesService } from '../application/services/sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
@@ -47,11 +53,18 @@ export class SalesController {
     });
   }
 
+  /**
+   * The sales history, paginated and filterable by either status axis.
+   * Paging answers a long list and nothing else: the panel's figures come
+   * from `GET /sales/analytics`, never from folding a page.
+   */
   @Get()
-  list(@Query() query: ListSalesQueryDto): Promise<SaleView[]> {
+  list(@Query() query: ListSalesQueryDto): Promise<SalePageView> {
     return this.salesService.list({
-      paymentStatus: query.paymentStatus,
-      productionStatus: query.productionStatus,
+      ...(query.paymentStatus !== undefined ? { paymentStatus: query.paymentStatus } : {}),
+      ...(query.productionStatus !== undefined ? { productionStatus: query.productionStatus } : {}),
+      limit: query.limit ?? DEFAULT_PAGE_SIZE,
+      offset: query.offset ?? 0,
     });
   }
 

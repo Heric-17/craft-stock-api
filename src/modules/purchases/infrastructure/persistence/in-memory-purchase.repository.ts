@@ -26,8 +26,14 @@ export class InMemoryPurchaseRepository implements PurchaseRepository {
     );
   }
 
-  async findAll(): Promise<Purchase[]> {
-    return Promise.resolve([...this.purchases.values()]);
+  /**
+   * Every purchase held, in no particular order. Not part of
+   * `PurchaseRepository`: no production path loads the whole history, and this
+   * exists only so the in-memory analytics adapter and the tests can read back
+   * what they wrote.
+   */
+  all(): Purchase[] {
+    return [...this.purchases.values()];
   }
 
   /** Same order and same filters as the Prisma one: newest first, ties broken on id. */

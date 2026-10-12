@@ -1,3 +1,4 @@
+import type { PageView } from '../../../../shared/application/pagination/page-view';
 import type { DiscountAllocationMode } from '../../domain/discount-allocation-mode';
 import type { SpendingGranularity } from '../../domain/spending-period';
 
@@ -159,12 +160,7 @@ export interface PurchaseListInput {
   offset: number;
 }
 
-export interface PurchasePageView {
-  items: PurchaseSummaryView[];
-  total: number;
-  limit: number;
-  offset: number;
-}
+export type PurchasePageView = PageView<PurchaseSummaryView>;
 
 export interface SpendingQueryInput {
   from: Date;

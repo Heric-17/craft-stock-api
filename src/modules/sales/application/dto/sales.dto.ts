@@ -1,3 +1,4 @@
+import type { PageView } from '../../../../shared/application/pagination/page-view';
 import type { ConsumptionUnit } from '../../../materials/domain/consumption-unit';
 import type { PaymentStatus } from '../../domain/payment-status.enum';
 import type { ProductionStatus } from '../../domain/production-status.enum';
@@ -33,7 +34,11 @@ export interface UpdateSaleDetailsInput {
 export interface SaleListFilter {
   paymentStatus?: PaymentStatus;
   productionStatus?: ProductionStatus;
+  limit: number;
+  offset: number;
 }
+
+export type SalePageView = PageView<SaleView>;
 
 /**
  * Read model for a `SaleItem`. Both `unitPrice` and `lineTotal` are derived
