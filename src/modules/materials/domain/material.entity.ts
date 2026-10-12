@@ -122,6 +122,20 @@ export class Material {
     return this.packageCost.scaled(quantity, this.packageQuantity);
   }
 
+  /**
+   * What the stock on hand is worth at the current `packageCost`:
+   * `stockQuantity × packageCost ÷ packageQuantity`, multiplied before divided
+   * and rounded once, to the cent, for this Material.
+   *
+   * Derived on every read and never persisted, like `unitCost`. It is rounded
+   * per Material on purpose: this is the figure the list shows on each row,
+   * and the inventory total is the sum of these rounded figures, so the total
+   * always equals the rows above it.
+   */
+  get stockValue(): Money {
+    return this.costFor(this.stockQuantity);
+  }
+
   get isBelowMinimumStock(): boolean {
     return this.stockQuantity <= this.minimumStockAlert;
   }

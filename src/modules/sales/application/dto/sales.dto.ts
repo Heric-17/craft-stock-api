@@ -84,4 +84,73 @@ export interface ShoppingListLineView {
   consumptionUnit: ConsumptionUnit;
   /** How `consumptionUnit` is written: `g`, `ml`, `cm`, `un`. */
   consumptionUnitSymbol: string;
+  /**
+   * Whole packages to buy to cover `shortage`, rounded up — a material is
+   * bought in a closed package. Zero when nothing is missing; null when the
+   * package data does not allow it (see `estimateIssue`).
+   */
+  packagesToBuy: number | null;
+  /**
+   * `packagesToBuy × packageCost`, two places. "0.00" when nothing is
+   * missing. NULL — not zero — when it cannot be estimated.
+   */
+  estimatedCost: string | null;
+  /** Set exactly when something is missing and the line could not be estimated. */
+  estimateIssue: 'MISSING_PACKAGE_DATA' | null;
+}
+
+/**
+ * The shopping list: its lines, and the estimate for the whole of it.
+ *
+ * `estimatedTotal` adds only the lines that could be estimated, so it is a
+ * lower bound — and complete only while `unestimatedLineCount` is zero. The
+ * client must say so when it is not, instead of presenting the total as whole.
+ */
+export interface ShoppingListView {
+  lines: ShoppingListLineView[];
+  estimatedTotal: string;
+  unestimatedLineCount: number;
+}
+
+export interface SalesDatasetQueryInput {
+  from: Date;
+  to: Date;
+}
+
+/** Totals of one slice of sales, with the amount as a decimal string. */
+export interface SalesTotalsView {
+  saleCount: number;
+  totalAmount: string;
+}
+
+export interface SalesByMonthView extends SalesTotalsView {
+  /** `YYYY-MM`, in the business time zone (America/Sao_Paulo). */
+  month: string;
+}
+
+export interface SalesByPaymentStatusView extends SalesTotalsView {
+  paymentStatus: PaymentStatus;
+}
+
+export interface SalesByProductionStatusView extends SalesTotalsView {
+  productionStatus: ProductionStatus;
+}
+
+export interface OpenSalesCellView extends SalesTotalsView {
+  paymentStatus: PaymentStatus;
+  productionStatus: ProductionStatus;
+}
+
+/**
+ * The sales dataset as the panel receives it: cells by dimension, not
+ * finished figures. `openItems` ignores the period on purpose — see
+ * `SalesDataset`.
+ */
+export interface SalesDatasetView {
+  from: Date;
+  to: Date;
+  byMonth: SalesByMonthView[];
+  byPaymentStatus: SalesByPaymentStatusView[];
+  byProductionStatus: SalesByProductionStatusView[];
+  openItems: OpenSalesCellView[];
 }

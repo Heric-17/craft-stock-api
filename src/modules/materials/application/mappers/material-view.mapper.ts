@@ -23,6 +23,7 @@ export class MaterialViewMapper {
       stockQuantity: material.stockQuantity,
       minimumStockAlert: material.minimumStockAlert,
       unitCost: material.unitCost,
+      stockValue: material.stockValue.toDecimalString(),
       lowStock: material.isBelowMinimumStock,
       isActive: material.isActive,
       discontinuedAt: material.discontinuedAt,

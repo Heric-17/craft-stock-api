@@ -542,7 +542,7 @@ describe('SalesService', () => {
 
       const list = await service.getShoppingList([a.id, b.id]);
 
-      expect(list).toEqual([
+      expect(list.lines).toEqual([
         {
           materialId: flour.id,
           materialName: flour.name,
@@ -553,8 +553,95 @@ describe('SalesService', () => {
           // list says which one: 40 of flour is 40 g, not 40 bags.
           consumptionUnit: 'GRAM',
           consumptionUnitSymbol: 'g',
+          // 40 g missing still means a whole 1 kg bag at 10.00.
+          packagesToBuy: 1,
+          estimatedCost: '10.00',
+          estimateIssue: null,
         },
       ]);
+      expect(list.estimatedTotal).toBe('10.00');
+      expect(list.unestimatedLineCount).toBe(0);
+    });
+
+    it('buys whole packages and totals the estimate over every line', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial({ stockQuantity: 0 });
+      const sugar = buildMaterial({
+        name: 'Açúcar',
+        packageCost: Money.fromDecimalString('4.50'),
+        packageQuantity: 500,
+        stockQuantity: 100,
+      });
+      await materials.save(flour);
+      await materials.save(sugar);
+      const sale = await service.create(
+        buildCreateInput({
+          items: [
+            { materialId: flour.id, quantity: 1500, marginPercent: 0 },
+            { materialId: sugar.id, quantity: 600, marginPercent: 0 },
+          ],
+        }),
+      );
+
+      const list = await service.getShoppingList([sale.id]);
+      const byId = new Map(list.lines.map((line) => [line.materialId, line]));
+
+      // 1500 g missing of 1 kg bags: 2 bags. 500 g missing of 500 g bags:
+      // exactly 1 bag, not 2.
+      expect(byId.get(flour.id)).toEqual(
+        expect.objectContaining({ packagesToBuy: 2, estimatedCost: '20.00' }),
+      );
+      expect(byId.get(sugar.id)).toEqual(
+        expect.objectContaining({ packagesToBuy: 1, estimatedCost: '4.50' }),
+      );
+      expect(list.estimatedTotal).toBe('24.50');
+    });
+
+    it('contributes zero for a Material that is not missing', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial({ stockQuantity: 1000 });
+      await materials.save(flour);
+      const sale = await service.create(
+        buildCreateInput({ items: [{ materialId: flour.id, quantity: 200, marginPercent: 0 }] }),
+      );
+
+      const list = await service.getShoppingList([sale.id]);
+
+      expect(list.lines[0]).toEqual(
+        expect.objectContaining({ shortage: 0, packagesToBuy: 0, estimatedCost: '0.00' }),
+      );
+      expect(list.estimatedTotal).toBe('0.00');
+      expect(list.unestimatedLineCount).toBe(0);
+    });
+
+    it('flags a Material with no package cost instead of estimating it as free', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial({ stockQuantity: 0, packageCost: Money.zero() });
+      const sugar = buildMaterial({ name: 'Açúcar', stockQuantity: 0 });
+      await materials.save(flour);
+      await materials.save(sugar);
+      const sale = await service.create(
+        buildCreateInput({
+          items: [
+            { materialId: flour.id, quantity: 100, marginPercent: 0 },
+            { materialId: sugar.id, quantity: 100, marginPercent: 0 },
+          ],
+        }),
+      );
+
+      const list = await service.getShoppingList([sale.id]);
+      const unestimated = list.lines.find((line) => line.materialId === flour.id);
+
+      expect(unestimated).toEqual(
+        expect.objectContaining({
+          packagesToBuy: 1,
+          estimatedCost: null,
+          estimateIssue: 'MISSING_PACKAGE_DATA',
+        }),
+      );
+      // The total is only what could be estimated, and says that it is not all.
+      expect(list.estimatedTotal).toBe('10.00');
+      expect(list.unestimatedLineCount).toBe(1);
     });
   });
 

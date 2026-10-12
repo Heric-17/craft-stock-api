@@ -4,6 +4,7 @@ import { RequestContextService } from '../../../../shared/infrastructure/logging
 import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistence/in-memory-unit-of-work';
 import { InMemoryCompositeProductRepository } from '../../../composite-products/infrastructure/persistence/in-memory-composite-product.repository';
 import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructure/persistence/in-memory-pending-invoice.repository';
+import { Material } from '../../../materials/domain/material.entity';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
 import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
@@ -16,6 +17,7 @@ import { PurchaseEditingService } from './purchase-editing.service';
 import { PurchasesService } from './purchases.service';
 
 interface Suite {
+  materials: InMemoryMaterialRepository;
   analytics: PurchaseAnalyticsService;
   purchases: PurchasesService;
   editing: PurchaseEditingService;
@@ -23,8 +25,9 @@ interface Suite {
 
 function buildSuite(): Suite {
   const purchaseRepository = new InMemoryPurchaseRepository();
+  const materialRepository = new InMemoryMaterialRepository();
   const context: RepositoryContext = {
-    materials: new InMemoryMaterialRepository(),
+    materials: materialRepository,
     compositeProducts: new InMemoryCompositeProductRepository(),
     sales: new InMemorySaleRepository(),
     purchases: purchaseRepository,
@@ -35,6 +38,7 @@ function buildSuite(): Suite {
   const unitOfWork = new InMemoryUnitOfWork(context);
 
   return {
+    materials: materialRepository,
     analytics: new PurchaseAnalyticsService(
       new InMemoryPurchaseAnalyticsAdapter(purchaseRepository),
     ),
@@ -409,6 +413,147 @@ describe('PurchaseAnalyticsService.getSpending', () => {
     const dataset = await analytics.getSpending({ ...SEPTEMBER, granularity: 'MONTH' });
     expect(dataset.byPeriod).toEqual([
       { period: '2026-09', netSpend: '30.00', discountTotal: '10.00', purchaseCount: 1 },
+    ]);
+  });
+
+  describe('by line kind (stock material or only a company expense)', () => {
+    async function stockMaterial(materials: InMemoryMaterialRepository): Promise<string> {
+      const now = new Date('2026-01-01T00:00:00Z');
+      await materials.save(
+        new Material({
+          id: 'material-flour',
+          name: 'Farinha',
+          description: null,
+          imageKey: null,
+          packageCost: Money.fromDecimalString('10.00'),
+          packageQuantity: 1000,
+          consumptionUnit: 'GRAM',
+          stockQuantity: 0,
+          minimumStockAlert: 0,
+          discontinuedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      );
+
+      return 'material-flour';
+    }
+
+    it('splits a mixed note, so the share of stock materials is a division the client can do', async () => {
+      const { analytics, purchases, materials } = buildSuite();
+      const materialId = await stockMaterial(materials);
+
+      await purchases.registerInvoicePurchase({
+        purchaseDate: new Date('2026-09-10T12:00:00Z'),
+        accessKey: null,
+        rawInvoiceData: null,
+        grossTotal: '100.00',
+        discountTotal: '0.00',
+        lines: [
+          line({ description: 'Farinha', grossValue: '72.00', unitPrice: '72.00', materialId }),
+          line({ description: 'Embalagem', grossValue: '28.00', unitPrice: '28.00' }),
+        ],
+      });
+
+      const dataset = await analytics.getSpending({ ...SEPTEMBER, granularity: 'MONTH' });
+
+      expect(dataset.byStockMaterial).toEqual([
+        { isStockMaterial: true, netSpend: '72.00', discountTotal: '0.00', purchaseCount: 1 },
+        { isStockMaterial: false, netSpend: '28.00', discountTotal: '0.00', purchaseCount: 1 },
+      ]);
+      // The new dimension does not disturb the others: the note is still one
+      // purchase of 100.00 in its month, not two purchases of 72.00 and 28.00.
+      expect(dataset.byPeriod).toEqual([
+        { period: '2026-09', netSpend: '100.00', discountTotal: '0.00', purchaseCount: 1 },
+      ]);
+    });
+
+    it('attributes the discount to the kind of line that received it', async () => {
+      const { analytics, purchases, materials } = buildSuite();
+      const materialId = await stockMaterial(materials);
+
+      await purchases.registerInvoicePurchase({
+        purchaseDate: new Date('2026-09-10T12:00:00Z'),
+        accessKey: null,
+        rawInvoiceData: null,
+        grossTotal: '100.00',
+        discountTotal: '10.00',
+        discountAllocationMode: 'PROPORTIONAL',
+        lines: [
+          line({ description: 'Farinha', grossValue: '60.00', unitPrice: '60.00', materialId }),
+          line({ description: 'Embalagem', grossValue: '40.00', unitPrice: '40.00' }),
+        ],
+      });
+
+      const dataset = await analytics.getSpending({ ...SEPTEMBER, granularity: 'MONTH' });
+
+      expect(dataset.byStockMaterial).toEqual([
+        { isStockMaterial: true, netSpend: '54.00', discountTotal: '6.00', purchaseCount: 1 },
+        { isStockMaterial: false, netSpend: '36.00', discountTotal: '4.00', purchaseCount: 1 },
+      ]);
+    });
+
+    it('does not count a personal line on either side', async () => {
+      const { analytics, purchases } = buildSuite();
+
+      await purchases.registerInvoicePurchase({
+        purchaseDate: new Date('2026-09-10T12:00:00Z'),
+        accessKey: null,
+        rawInvoiceData: null,
+        grossTotal: '120.00',
+        discountTotal: '0.00',
+        lines: [
+          line({ description: 'Embalagem', grossValue: '20.00', unitPrice: '20.00' }),
+          line({
+            description: 'Vinho',
+            grossValue: '100.00',
+            unitPrice: '100.00',
+            isCompanyExpense: false,
+          }),
+        ],
+      });
+
+      const dataset = await analytics.getSpending({ ...SEPTEMBER, granularity: 'MONTH' });
+
+      expect(dataset.byStockMaterial).toEqual([
+        { isStockMaterial: true, netSpend: '0.00', discountTotal: '0.00', purchaseCount: 0 },
+        { isStockMaterial: false, netSpend: '20.00', discountTotal: '0.00', purchaseCount: 1 },
+      ]);
+    });
+
+    it('reports both sides as zeros for an empty period', async () => {
+      const { analytics } = buildSuite();
+
+      const dataset = await analytics.getSpending({ ...SEPTEMBER, granularity: 'MONTH' });
+
+      expect(dataset.byStockMaterial).toEqual([
+        { isStockMaterial: true, netSpend: '0.00', discountTotal: '0.00', purchaseCount: 0 },
+        { isStockMaterial: false, netSpend: '0.00', discountTotal: '0.00', purchaseCount: 0 },
+      ]);
+    });
+  });
+
+  it('buckets a purchase by the business calendar: 21:30 on 30 September is September', async () => {
+    const { analytics, purchases } = buildSuite();
+
+    await purchases.registerInvoicePurchase({
+      // 21:30 in Porto Alegre is 00:30 on 1 October in UTC.
+      purchaseDate: new Date('2026-10-01T00:30:00Z'),
+      accessKey: null,
+      rawInvoiceData: null,
+      grossTotal: '10.00',
+      discountTotal: '0.00',
+      lines: [line()],
+    });
+
+    const september = await analytics.getSpending({
+      from: new Date('2026-09-01T00:00:00-03:00'),
+      to: new Date('2026-10-01T00:00:00-03:00'),
+      granularity: 'MONTH',
+    });
+
+    expect(september.byPeriod).toEqual([
+      { period: '2026-09', netSpend: '10.00', discountTotal: '0.00', purchaseCount: 1 },
     ]);
   });
 });

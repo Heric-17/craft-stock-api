@@ -9,6 +9,7 @@ import type {
   SpendingTotals,
 } from '../../domain/ports/purchase-analytics.port';
 import type { Purchase } from '../../domain/purchase.entity';
+import { buildStockMaterialDimension } from '../../domain/spending-by-stock-material';
 import { formatSpendingPeriod } from '../../domain/spending-period';
 import type { InMemoryPurchaseRepository } from '../persistence/in-memory-purchase.repository';
 
@@ -33,6 +34,7 @@ export class InMemoryPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
   async spendingDataset(query: SpendingDatasetQuery): Promise<SpendingDataset> {
     const byPeriod = new Map<string, Accumulator>();
     const byEstablishment = new Map<string, Accumulator>();
+    const byStockMaterial = new Map<string, Accumulator>();
 
     for (const purchase of await this.purchases.findAll()) {
       if (!this.isInScope(purchase, query)) {
@@ -58,6 +60,25 @@ export class InMemoryPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
         { netSpend: Money.zero(), discountTotal: Money.zero() },
       );
 
+      for (const isStockMaterial of [true, false]) {
+        const lines = companyLines.filter((item) => item.isStockMaterial === isStockMaterial);
+
+        if (lines.length > 0) {
+          accumulate(
+            byStockMaterial,
+            String(isStockMaterial),
+            {
+              netSpend: lines.reduce((sum, item) => sum.plus(item.netValue), Money.zero()),
+              discountTotal: lines.reduce(
+                (sum, item) => sum.plus(item.allocatedDiscount),
+                Money.zero(),
+              ),
+            },
+            null,
+          );
+        }
+      }
+
       const establishmentId = purchase.establishment?.id ?? null;
 
       accumulate(
@@ -80,6 +101,10 @@ export class InMemoryPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
       granularity: query.granularity,
       byPeriod: toPeriodDimension(byPeriod),
       byEstablishment: toEstablishmentDimension(byEstablishment),
+      byStockMaterial: buildStockMaterialDimension(
+        byStockMaterial.get('true'),
+        byStockMaterial.get('false'),
+      ),
     };
   }
 

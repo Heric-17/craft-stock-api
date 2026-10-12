@@ -11,11 +11,13 @@ import {
   Query,
 } from '@nestjs/common';
 
-import type { SaleView, ShoppingListLineView } from '../application/dto/sales.dto';
+import type { SaleView, SalesDatasetView, ShoppingListView } from '../application/dto/sales.dto';
+import { SalesAnalyticsService } from '../application/services/sales-analytics.service';
 import { SalesService } from '../application/services/sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { CreateSaleItemDto } from './dto/create-sale-item.dto';
 import { ListSalesQueryDto } from './dto/list-sales-query.dto';
+import { SalesAnalyticsQueryDto } from './dto/sales-analytics-query.dto';
 import { ShoppingListDto } from './dto/shopping-list.dto';
 import { UpdateItemQuantityDto } from './dto/update-item-quantity.dto';
 import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto';
@@ -24,7 +26,10 @@ import { UpdateSaleDetailsDto } from './dto/update-sale-details.dto';
 
 @Controller('sales')
 export class SalesController {
-  constructor(private readonly salesService: SalesService) {}
+  constructor(
+    private readonly salesService: SalesService,
+    private readonly salesAnalytics: SalesAnalyticsService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -50,9 +55,26 @@ export class SalesController {
     });
   }
 
+  /**
+   * The sales dataset, cut by month, by `paymentStatus` and by
+   * `productionStatus`, plus the sales still open whatever their date.
+   *
+   * A dataset and not a set of finished figures: sales this month, the change
+   * against the last, orders in production and the amount to receive are
+   * folds over these cells, done by the panel. Declared before `:id` so the
+   * literal path is matched first.
+   */
+  @Get('analytics')
+  getAnalytics(@Query() query: SalesAnalyticsQueryDto): Promise<SalesDatasetView> {
+    return this.salesAnalytics.getSalesDataset({
+      from: new Date(query.from),
+      to: new Date(query.to),
+    });
+  }
+
   @Post('shopping-list')
   @HttpCode(HttpStatus.OK)
-  getShoppingList(@Body() dto: ShoppingListDto): Promise<ShoppingListLineView[]> {
+  getShoppingList(@Body() dto: ShoppingListDto): Promise<ShoppingListView> {
     return this.salesService.getShoppingList(dto.saleIds);
   }
 

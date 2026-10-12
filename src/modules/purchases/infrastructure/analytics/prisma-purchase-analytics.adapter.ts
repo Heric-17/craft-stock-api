@@ -13,6 +13,7 @@ import type {
   SpendingDatasetQuery,
   SpendingTotals,
 } from '../../domain/ports/purchase-analytics.port';
+import { buildStockMaterialDimension } from '../../domain/spending-by-stock-material';
 import { formatSpendingPeriod } from '../../domain/spending-period';
 import { toWhere } from '../persistence/prisma-purchase.repository';
 
@@ -38,13 +39,14 @@ export class PrismaPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
    *
    * The per-purchase sums come from `groupBy` with `_sum`, filtered through
    * the relation so the period predicate is applied in the database rather
-   * than by handing it a list of ids. It groups by `purchaseId` and not
-   * straight into months because the two figures wanted are sums of an
-   * expression — `grossValue − allocatedDiscount` — over a column that lives
-   * on the other table, and neither of those is something `groupBy` can
-   * express. Summing the two columns separately and subtracting is exact,
-   * both being decimals, and the fold into periods and shops happens here
-   * over one row per purchase.
+   * than by handing it a list of ids. It groups by `purchaseId` (and by the
+   * kind of line, for the stock-material dimension) and not straight into
+   * months because the two figures wanted are sums of an expression —
+   * `grossValue − allocatedDiscount` — over a column that lives on the other
+   * table, and neither of those is something `groupBy` can express. Summing
+   * the two columns separately and subtracting is exact, both being
+   * decimals, and the fold into periods and shops happens here over a
+   * handful of rows per purchase.
    *
    * Two filters are load-bearing. Only company-expense lines are counted:
    * the panel answers what left the business's till, so a personal item on
@@ -61,7 +63,7 @@ export class PrismaPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
 
     const [sums, purchases] = await Promise.all([
       this.prisma.purchaseItem.groupBy({
-        by: ['purchaseId'],
+        by: ['purchaseId', 'isStockMaterial'],
         where: { isCompanyExpense: true, purchase: purchaseWhere },
         _sum: { grossValue: true, allocatedDiscount: true },
       }),
@@ -75,19 +77,15 @@ export class PrismaPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
       purchases.map((purchase) => [purchase.id, purchase]),
     );
 
-    const byPeriod = new Map<string, Accumulator>();
-    const byEstablishment = new Map<string, Accumulator>();
+    // The grouping is per purchase AND per line kind, so a purchase appears
+    // once for each kind it has lines of. The period and establishment
+    // dimensions count purchases, which means folding those rows back into one
+    // total per purchase before they feed them — otherwise a note mixing stock
+    // and non-stock lines would be counted twice.
+    const perPurchase = new Map<string, { netSpend: Money; discountTotal: Money }>();
+    const byStockMaterial = new Map<string, Accumulator>();
 
     for (const row of sums) {
-      const purchase = dimensions.get(row.purchaseId);
-
-      // The two queries are filtered identically, so this can only happen if
-      // a purchase was written between them. It contributes nothing rather
-      // than landing in a bucket whose period is unknown.
-      if (purchase === undefined) {
-        continue;
-      }
-
       const gross =
         row._sum.grossValue === null ? Money.zero() : toDomainMoney(row._sum.grossValue);
       const discount =
@@ -95,6 +93,33 @@ export class PrismaPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
           ? Money.zero()
           : toDomainMoney(row._sum.allocatedDiscount);
       const totals = { netSpend: gross.minus(discount), discountTotal: discount };
+
+      accumulate(byStockMaterial, String(row.isStockMaterial), totals, null);
+
+      const running = perPurchase.get(row.purchaseId);
+      perPurchase.set(
+        row.purchaseId,
+        running === undefined
+          ? totals
+          : {
+              netSpend: running.netSpend.plus(totals.netSpend),
+              discountTotal: running.discountTotal.plus(totals.discountTotal),
+            },
+      );
+    }
+
+    const byPeriod = new Map<string, Accumulator>();
+    const byEstablishment = new Map<string, Accumulator>();
+
+    for (const [purchaseId, totals] of perPurchase) {
+      const purchase = dimensions.get(purchaseId);
+
+      // The two queries are filtered identically, so this can only happen if
+      // a purchase was written between them. It contributes nothing rather
+      // than landing in a bucket whose period is unknown.
+      if (purchase === undefined) {
+        continue;
+      }
 
       const establishmentId = establishmentIdOf(purchase.merchantName, purchase.merchantCnpj);
 
@@ -113,6 +138,10 @@ export class PrismaPurchaseAnalyticsAdapter implements PurchaseAnalyticsPort {
       granularity: query.granularity,
       byPeriod: toPeriodDimension(byPeriod),
       byEstablishment: toEstablishmentDimension(byEstablishment),
+      byStockMaterial: buildStockMaterialDimension(
+        byStockMaterial.get('true'),
+        byStockMaterial.get('false'),
+      ),
     };
   }
 }

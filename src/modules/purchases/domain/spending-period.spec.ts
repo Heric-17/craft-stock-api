@@ -8,11 +8,11 @@ describe('formatSpendingPeriod', () => {
     expect(formatSpendingPeriod(date, 'DAY')).toBe('2026-09-10');
   });
 
-  it('labels by the stored instant, not by the server clock', () => {
-    // The last hour of a UTC month is still that month. Letting the label
-    // follow the process's local zone would move a purchase between months
-    // depending on where the process happens to run.
-    expect(formatSpendingPeriod(new Date('2026-09-30T23:30:00Z'), 'MONTH')).toBe('2026-09');
-    expect(formatSpendingPeriod(new Date('2026-10-01T00:30:00Z'), 'MONTH')).toBe('2026-10');
+  it('labels by the business calendar, not by UTC and not by the server clock', () => {
+    // 21:30 on 30 September in Porto Alegre is already 1 October in UTC. The
+    // purchase screen shows 30/09, so the month total must include it.
+    expect(formatSpendingPeriod(new Date('2026-10-01T00:30:00Z'), 'MONTH')).toBe('2026-09');
+    expect(formatSpendingPeriod(new Date('2026-10-01T00:30:00Z'), 'DAY')).toBe('2026-09-30');
+    expect(formatSpendingPeriod(new Date('2026-10-01T03:00:00Z'), 'MONTH')).toBe('2026-10');
   });
 });

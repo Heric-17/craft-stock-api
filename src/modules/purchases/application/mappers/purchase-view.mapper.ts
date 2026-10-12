@@ -2,6 +2,7 @@ import type { Establishment } from '../../domain/establishment';
 import type {
   SpendingByEstablishment,
   SpendingByPeriod,
+  SpendingByStockMaterial,
   SpendingDataset,
 } from '../../domain/ports/purchase-analytics.port';
 import type { Purchase } from '../../domain/purchase.entity';
@@ -16,6 +17,7 @@ import type {
   PurchaseView,
   SpendingByEstablishmentView,
   SpendingByPeriodView,
+  SpendingByStockMaterialView,
   SpendingDatasetView,
 } from '../dto/purchases.dto';
 
@@ -104,6 +106,20 @@ export class PurchaseViewMapper {
       byEstablishment: dataset.byEstablishment.map((bucket) =>
         PurchaseViewMapper.toEstablishmentSpendingView(bucket),
       ),
+      byStockMaterial: dataset.byStockMaterial.map((bucket) =>
+        PurchaseViewMapper.toStockMaterialSpendingView(bucket),
+      ),
+    };
+  }
+
+  private static toStockMaterialSpendingView(
+    bucket: SpendingByStockMaterial,
+  ): SpendingByStockMaterialView {
+    return {
+      isStockMaterial: bucket.isStockMaterial,
+      netSpend: bucket.netSpend.toDecimalString(),
+      discountTotal: bucket.discountTotal.toDecimalString(),
+      purchaseCount: bucket.purchaseCount,
     };
   }
 

@@ -23,6 +23,7 @@ export interface MaterialView {
   minimumStockAlert: number;
   /** Cost of one `consumptionUnit`, for display only. */
   unitCost: string;
+  stockValue: string;
   lowStock: boolean;
   isActive: boolean;
   discontinuedAt: Date | null;
@@ -76,4 +77,16 @@ export interface StockEntryInput {
   absoluteQuantity?: number;
   source: StockEntrySource;
   invoicePackageCost?: string;
+}
+
+/**
+ * The one aggregate of the materials module. It is a finished figure and not a
+ * dataset by dimension, as an exception: see `MaterialInventorySummaryPort`.
+ */
+export interface MaterialInventorySummaryView {
+  /** Active Materials, or all of them when discontinued ones were asked for. */
+  materialCount: number;
+  belowMinimumCount: number;
+  /** Two places. The sum of each Material's rounded `stockValue`. */
+  totalStockValue: string;
 }

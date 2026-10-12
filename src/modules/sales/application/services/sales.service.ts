@@ -49,6 +49,11 @@ import {
   UnknownCompositeProductReferenceError,
   UnknownMaterialReferenceError,
 } from '../../domain/sale.error';
+import {
+  estimatePurchase,
+  totalPurchaseEstimate,
+  type PurchaseEstimate,
+} from '../../domain/purchase-estimate';
 import { calculateShortage, type ShortageLine } from '../../domain/shortage';
 import { calculateStockDebit } from '../../domain/stock-debit';
 import { StockMovementSnapshot } from '../../domain/stock-movement-snapshot.entity';
@@ -58,6 +63,7 @@ import type {
   SaleListFilter,
   SaleView,
   ShoppingListLineView,
+  ShoppingListView,
   UpdateSaleDetailsInput,
 } from '../dto/sales.dto';
 import { SaleViewMapper } from '../mappers/sale-view.mapper';
@@ -256,7 +262,7 @@ export class SalesService {
   }
 
   /** Case 5: aggregated shopping list across a set of selected Sales. */
-  async getShoppingList(saleIds: string[]): Promise<ShoppingListLineView[]> {
+  async getShoppingList(saleIds: string[]): Promise<ShoppingListView> {
     const itemsPerSale = await Promise.all(
       saleIds.map((saleId) => this.sales.findItemsBySaleId(saleId)),
     );
@@ -275,8 +281,15 @@ export class SalesService {
       lines.push({ materialId, needed, stockQuantity: material.stockQuantity });
     }
 
-    return calculateShortage(lines).map((result) => {
+    const estimates = new Map<string, PurchaseEstimate>();
+    const viewLines = calculateShortage(lines).map((result): ShoppingListLineView => {
       const material = this.materialOrThrow(materialsById, result.materialId);
+      const estimate = estimatePurchase({
+        shortage: result.shortage,
+        packageQuantity: material.packageQuantity,
+        packageCost: material.packageCost,
+      });
+      estimates.set(result.materialId, estimate);
 
       return {
         materialId: result.materialId,
@@ -288,8 +301,19 @@ export class SalesService {
         // 2 of egg boxes is 2 boxes.
         consumptionUnit: material.consumptionUnit,
         consumptionUnitSymbol: consumptionUnitSymbol(material.consumptionUnit),
+        packagesToBuy: estimate.packagesToBuy,
+        estimatedCost: estimate.estimatedCost?.toDecimalString() ?? null,
+        estimateIssue: estimate.estimateIssue,
       };
     });
+
+    const total = totalPurchaseEstimate([...estimates.values()]);
+
+    return {
+      lines: viewLines,
+      estimatedTotal: total.estimatedTotal.toDecimalString(),
+      unestimatedLineCount: total.unestimatedLineCount,
+    };
   }
 
   /**

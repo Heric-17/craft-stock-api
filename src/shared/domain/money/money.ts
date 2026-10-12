@@ -3,15 +3,30 @@ import { InvalidMoneyOperationError } from './money.error';
 const DECIMAL_STRING_PATTERN = /^(-?)(\d+)(?:\.(\d+))?$/;
 
 /**
+ * Decimal places a quantity keeps when it enters a calculation. Above what any
+ * column carries (`Decimal(12,3)`, and the product of two of them), so no real
+ * quantity loses a digit; what it discards is the binary fuzz a `number`
+ * brings along (`0.30000000000000004`), which must not reach the tie decision.
+ */
+const QUANTITY_DECIMAL_PLACES = 6;
+
+/**
  * Money value object. Immutable, stores its amount internally as an integer
  * number of cents so that no arithmetic on it ever goes through floating
  * point — the fractional cost of a `Material` (`packageCost / packageQuantity`,
  * multiplied and summed across a whole `BillOfMaterials`) is exactly the kind
  * of repeated division where float error accumulates.
  *
- * Rounding is defined in exactly one place: {@link Money.round}, half away
- * from zero. Every operation that can produce a fractional cent (`times`,
- * `dividedBy`, parsing a decimal string) funnels through it.
+ * Rounding policy: **half away from zero**, applied to the exact result.
+ * R$ 0,125 becomes R$ 0,13 and -R$ 0,125 becomes -R$ 0,13; 0,135 becomes 0,14.
+ * A tie is decided by the rule and never by the representation of a number,
+ * which is why `times`, `dividedBy` and `scaled` do their arithmetic on
+ * integers (see {@link Money.scaled}) instead of multiplying floats. The
+ * cases that pin the policy are in `money.spec.ts`.
+ *
+ * Two functions implement it: {@link Money.round}, for the digit-based parse of
+ * a decimal string, and `divideRoundingHalfAwayFromZero`, for everything that
+ * scales an amount.
  */
 export class Money {
   private constructor(private readonly cents: number) {}
@@ -76,7 +91,7 @@ export class Money {
       );
     }
 
-    return new Money(Money.round(this.cents * factor));
+    return this.scaleExactly(factor, 1);
   }
 
   dividedBy(divisor: number): Money {
@@ -86,7 +101,7 @@ export class Money {
       );
     }
 
-    return new Money(Money.round(this.cents / divisor));
+    return this.scaleExactly(1, divisor);
   }
 
   /**
@@ -102,6 +117,12 @@ export class Money {
    *
    * Doing both in one step keeps the fraction of a cent alive until there is
    * a real amount to round, which is the whole reason this class exists.
+   *
+   * The step is exact. Multiplier and divisor are taken as decimals with up
+   * to six places and the whole expression is evaluated in integers, so a
+   * result that is exactly half a cent is a tie that the rounding policy
+   * decides. In floating point, `25 ¢ × 1.14` is `28.499999999999996` and
+   * would round down to 28 ¢ when the exact value, 28.5 ¢, rounds to 29 ¢.
    */
   scaled(multiplier: number, divisor: number): Money {
     if (!Number.isFinite(multiplier)) {
@@ -116,7 +137,21 @@ export class Money {
       );
     }
 
-    return new Money(Money.round((this.cents * multiplier) / divisor));
+    return this.scaleExactly(multiplier, divisor);
+  }
+
+  private scaleExactly(multiplier: number, divisor: number): Money {
+    const scaledDivisor = toScaledInteger(divisor);
+
+    if (scaledDivisor === 0n) {
+      throw new InvalidMoneyOperationError(
+        `A divisor of ${divisor} is zero at ${QUANTITY_DECIMAL_PLACES} decimal places.`,
+      );
+    }
+
+    const numerator = BigInt(this.cents) * toScaledInteger(multiplier);
+
+    return new Money(Number(divideRoundingHalfAwayFromZero(numerator, scaledDivisor)));
   }
 
   equals(other: Money): boolean {
@@ -163,4 +198,26 @@ export class Money {
 
     return `${sign}${units}.${String(remainderCents).padStart(2, '0')}`;
   }
+}
+
+/**
+ * A quantity as an integer count of millionths. `toFixed` expands the exact
+ * binary value of the double and rounds it in decimal, so `0.58` becomes
+ * `580000` and `0.30000000000000004` becomes `300000`.
+ */
+function toScaledInteger(value: number): bigint {
+  return BigInt(value.toFixed(QUANTITY_DECIMAL_PLACES).replace('.', ''));
+}
+
+/**
+ * `numerator ÷ denominator` rounded half away from zero, in integers:
+ * `floor((2·|n| + |d|) ÷ 2·|d|)`, with the sign put back at the end.
+ */
+function divideRoundingHalfAwayFromZero(numerator: bigint, denominator: bigint): bigint {
+  const negative = numerator < 0n !== denominator < 0n;
+  const absoluteNumerator = numerator < 0n ? -numerator : numerator;
+  const absoluteDenominator = denominator < 0n ? -denominator : denominator;
+  const quotient = (2n * absoluteNumerator + absoluteDenominator) / (2n * absoluteDenominator);
+
+  return negative ? -quotient : quotient;
 }

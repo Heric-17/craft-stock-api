@@ -1,3 +1,5 @@
+import { businessDayOf, businessMonthOf } from '../../../shared/domain/time/business-calendar';
+
 /** The bucket the spending dataset is grouped by along the time dimension. */
 export const SPENDING_GRANULARITIES = ['DAY', 'MONTH'] as const;
 
@@ -9,12 +11,11 @@ export type SpendingGranularity = (typeof SPENDING_GRANULARITIES)[number];
  *
  * Both the Prisma adapter and the in-memory fake label their buckets with
  * this, so a test written against the fake reads the same periods the
- * database produces. UTC on purpose: the stored instant is what is bucketed,
- * and letting the label follow the server's local zone would move a purchase
- * between months depending on where the process happens to run.
+ * database produces. The label is the day or month in the business time zone
+ * (`America/Sao_Paulo`), because that is the date the screen shows for the
+ * purchase: bucketing by UTC would drop a purchase made on the evening of the
+ * last day of a month into the next one.
  */
 export function formatSpendingPeriod(date: Date, granularity: SpendingGranularity): string {
-  const iso = date.toISOString();
-
-  return granularity === 'MONTH' ? iso.slice(0, 7) : iso.slice(0, 10);
+  return granularity === 'MONTH' ? businessMonthOf(date) : businessDayOf(date);
 }

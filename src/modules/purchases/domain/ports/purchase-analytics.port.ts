@@ -57,6 +57,22 @@ export interface SpendingByEstablishment extends SpendingTotals {
 }
 
 /**
+ * Spending split by what the line is: stock `Material` or only a company
+ * expense. This is how a line is classified today, and it is NOT a spending
+ * category — a category the user chooses (decoration, packaging, product) does
+ * not exist, and when it does it will be modelled on its own.
+ *
+ * Both values are always present, a side with nothing in it reporting zeros,
+ * so the share of stock materials in the period is a division the client can
+ * always do. `purchaseCount` here is the number of purchases with at least one
+ * company line of this kind, so a note that mixes the two counts on both sides:
+ * the two counts do not add up to the number of purchases.
+ */
+export interface SpendingByStockMaterial extends SpendingTotals {
+  isStockMaterial: boolean;
+}
+
+/**
  * Spending aggregated by dimension, not a finished screen.
  *
  * Every figure the panel shows — the period total, the average ticket, the
@@ -76,6 +92,7 @@ export interface SpendingDataset {
   granularity: SpendingGranularity;
   byPeriod: SpendingByPeriod[];
   byEstablishment: SpendingByEstablishment[];
+  byStockMaterial: SpendingByStockMaterial[];
 }
 
 /**

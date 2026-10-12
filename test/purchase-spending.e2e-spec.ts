@@ -431,4 +431,94 @@ describe('Purchase spending and discount policy (e2e)', () => {
       ['2034-03', '33.00'],
     ]);
   });
+
+  describe('by line kind, and by the business calendar', () => {
+    const MARCH = {
+      from: new Date('2045-03-01T00:00:00-03:00'),
+      to: new Date('2045-04-01T00:00:00-03:00'),
+    };
+
+    it('splits a mixed note into stock materials and other company expenses', async () => {
+      const flour = await seedMaterial('10.00');
+
+      await record({
+        purchaseDate: new Date('2045-03-10T15:00:00Z'),
+        accessKey: null,
+        rawInvoiceData: null,
+        grossTotal: '100.00',
+        discountTotal: '10.00',
+        discountAllocationMode: 'PROPORTIONAL',
+        lines: [
+          {
+            description: 'Farinha',
+            quantity: 1,
+            unitPrice: '60.00',
+            grossValue: '60.00',
+            isCompanyExpense: true,
+            materialId: flour.id,
+          },
+          {
+            description: 'Sacolas',
+            quantity: 1,
+            unitPrice: '40.00',
+            grossValue: '40.00',
+            isCompanyExpense: true,
+            materialId: null,
+          },
+        ],
+      });
+
+      const dataset = await analytics.getSpending({ ...MARCH, granularity: 'MONTH' });
+
+      expect(dataset.byStockMaterial).toEqual([
+        { isStockMaterial: true, netSpend: '54.00', discountTotal: '6.00', purchaseCount: 1 },
+        { isStockMaterial: false, netSpend: '36.00', discountTotal: '4.00', purchaseCount: 1 },
+      ]);
+      // The note is still one purchase in its month, not one per kind of line.
+      expect(dataset.byPeriod).toEqual([
+        { period: '2045-03', netSpend: '90.00', discountTotal: '10.00', purchaseCount: 1 },
+      ]);
+    });
+
+    it('buckets a purchase made on the evening of the last day in the month it is shown in', async () => {
+      // 21:30 on 31 March in Porto Alegre is 00:30 on 1 April in UTC.
+      await record({
+        purchaseDate: new Date('2045-04-01T00:30:00Z'),
+        accessKey: null,
+        rawInvoiceData: null,
+        grossTotal: '12.00',
+        discountTotal: '0.00',
+        lines: [
+          {
+            description: 'Embalagem',
+            quantity: 1,
+            unitPrice: '12.00',
+            grossValue: '12.00',
+            isCompanyExpense: true,
+            materialId: null,
+          },
+        ],
+      });
+
+      const month = await analytics.getSpending({ ...MARCH, granularity: 'MONTH' });
+      const day = await analytics.getSpending({ ...MARCH, granularity: 'DAY' });
+
+      expect(month.byPeriod.find((bucket) => bucket.period === '2045-03')?.purchaseCount).toBe(2);
+      expect(day.byPeriod.map((bucket) => bucket.period)).toContain('2045-03-31');
+      expect(month.byPeriod.map((bucket) => bucket.period)).not.toContain('2045-04');
+    });
+
+    it('reports both sides as zeros for a period with no purchases', async () => {
+      const dataset = await analytics.getSpending({
+        from: new Date('2046-03-01T00:00:00-03:00'),
+        to: new Date('2046-04-01T00:00:00-03:00'),
+        granularity: 'MONTH',
+      });
+
+      expect(dataset.byStockMaterial).toEqual([
+        { isStockMaterial: true, netSpend: '0.00', discountTotal: '0.00', purchaseCount: 0 },
+        { isStockMaterial: false, netSpend: '0.00', discountTotal: '0.00', purchaseCount: 0 },
+      ]);
+    });
+  });
 });

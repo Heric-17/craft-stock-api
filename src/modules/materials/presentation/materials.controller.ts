@@ -18,14 +18,17 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { EnvService } from '../../../config/env.service';
 import { validateImageFile } from '../../../shared/presentation/http/validate-image-file';
 import type {
+  MaterialInventorySummaryView,
   MaterialPriceHistoryView,
   MaterialView,
   StockEntryInput,
   UpdateMaterialInput,
 } from '../application/dto/materials.dto';
+import { MaterialInventoryService } from '../application/services/material-inventory.service';
 import { MaterialsService } from '../application/services/materials.service';
 import { ChangeConsumptionUnitDto } from './dto/consumption-unit.dto';
 import { CreateMaterialDto } from './dto/create-material.dto';
+import { InventorySummaryQueryDto } from './dto/inventory-summary-query.dto';
 import { SearchMaterialsQueryDto } from './dto/search-materials-query.dto';
 import { StockEntryDto } from './dto/stock-entry.dto';
 import { UpdateMaterialDto } from './dto/update-material.dto';
@@ -34,6 +37,7 @@ import { UpdateMaterialDto } from './dto/update-material.dto';
 export class MaterialsController {
   constructor(
     private readonly materialsService: MaterialsService,
+    private readonly materialInventory: MaterialInventoryService,
     private readonly env: EnvService,
   ) {}
 
@@ -60,6 +64,19 @@ export class MaterialsController {
     }
 
     return this.materialsService.list(includeDiscontinued);
+  }
+
+  /**
+   * Total of the stock: how many Materials, how many are below their minimum
+   * and what the stock is worth. The one finished figure of this module — an
+   * exception, justified on `MaterialInventorySummaryPort`. Declared before
+   * `:id` so the literal path is matched first.
+   */
+  @Get('inventory-summary')
+  getInventorySummary(
+    @Query() query: InventorySummaryQueryDto,
+  ): Promise<MaterialInventorySummaryView> {
+    return this.materialInventory.getSummary(query.includeDiscontinued === 'true');
   }
 
   /**

@@ -198,3 +198,115 @@ describe('Money.scaled', () => {
     expect(original.toDecimalString()).toBe('28.00');
   });
 });
+
+/**
+ * The rounding policy as a contract: half away from zero, on the exact result.
+ * These are the cases a client ports its own tests from.
+ */
+describe('Money rounding policy', () => {
+  const vectors = {
+    scaled: [
+      // 28.5 cents; a float computes 28.499999999999996 and rounds down.
+      { amount: '0.25', multiplier: '1.14', divisor: '1', result: '0.29' },
+      // 14.5 cents; a float computes 14.499999999999998.
+      { amount: '0.25', multiplier: '0.58', divisor: '1', result: '0.15' },
+      { amount: '0.01', multiplier: '12.5', divisor: '1', result: '0.13' },
+      { amount: '0.01', multiplier: '13.5', divisor: '1', result: '0.14' },
+      // -0.125 rounds away from zero.
+      { amount: '-0.01', multiplier: '12.5', divisor: '1', result: '-0.13' },
+      { amount: '1.00', multiplier: '1', divisor: '8', result: '0.13' },
+      { amount: '1.00', multiplier: '1', divisor: '3', result: '0.33' },
+      { amount: '1.00', multiplier: '2', divisor: '3', result: '0.67' },
+      // 120 g of a 1 kg bag at 28.00.
+      { amount: '28.00', multiplier: '120', divisor: '1000', result: '3.36' },
+      // 0.5 cent and 1.5 cents.
+      { amount: '5.00', multiplier: '1', divisor: '1000', result: '0.01' },
+      { amount: '5.00', multiplier: '3', divisor: '1000', result: '0.02' },
+      { amount: '-5.00', multiplier: '3', divisor: '1000', result: '-0.02' },
+      { amount: '0.05', multiplier: '0.5', divisor: '1', result: '0.03' },
+      { amount: '0.05', multiplier: '-0.5', divisor: '1', result: '-0.03' },
+      // 8.7454, no tie.
+      { amount: '59.90', multiplier: '0.146', divisor: '1', result: '8.75' },
+    ],
+    parse: [
+      { input: '0.125', result: '0.13' },
+      { input: '0.135', result: '0.14' },
+      { input: '0.124', result: '0.12' },
+      { input: '-0.125', result: '-0.13' },
+      { input: '10.005', result: '10.01' },
+      { input: '-10.005', result: '-10.01' },
+    ],
+  };
+
+  it.each(vectors.scaled)(
+    'scaled: $amount x $multiplier / $divisor = $result',
+    ({ amount, multiplier, divisor, result }) => {
+      expect(
+        Money.fromDecimalString(amount)
+          .scaled(Number(multiplier), Number(divisor))
+          .toDecimalString(),
+      ).toBe(result);
+    },
+  );
+
+  it.each(vectors.parse)('fromDecimalString: $input = $result', ({ input, result }) => {
+    expect(Money.fromDecimalString(input).toDecimalString()).toBe(result);
+  });
+
+  /**
+   * Every exact tie reachable with a three-decimal quantity, checked against an
+   * oracle written in plain integers. A float implementation fails a few
+   * percent of these (e.g. 25 cents x 1.14 = 28.5 computed as 28.4999...).
+   */
+  it('decides every exact tie by the rule, never by the float representation', () => {
+    let ties = 0;
+
+    for (const cents of [1, 5, 10, 25, 99, 100, 250, 1234, 2800]) {
+      for (const divisor of [1, 2, 4, 8, 20, 40, 1000]) {
+        for (let milli = 1; milli <= 3000; milli++) {
+          const numerator = 2 * cents * milli;
+          const denominator = divisor * 1000;
+
+          if (numerator % denominator !== 0 || (numerator / denominator) % 2 === 0) {
+            continue;
+          }
+
+          ties++;
+          const expected = Math.floor((cents * milli) / denominator) + 1;
+
+          expect(
+            Money.fromCents(cents)
+              .scaled(milli / 1000, divisor)
+              .toCents(),
+          ).toBe(expected);
+          expect(
+            Money.fromCents(-cents)
+              .scaled(milli / 1000, divisor)
+              .toCents(),
+          ).toBe(-expected);
+        }
+      }
+    }
+
+    expect(ties).toBeGreaterThan(2000);
+  });
+
+  it('is not thrown off by binary fuzz on a quantity', () => {
+    // 0.1 + 0.2 is 0.30000000000000004 as a double; as a quantity it is 0.3.
+    expect(
+      Money.fromCents(500)
+        .scaled(0.1 + 0.2, 1)
+        .toCents(),
+    ).toBe(150);
+  });
+
+  it('times and dividedBy follow the same policy', () => {
+    expect(Money.fromCents(25).times(1.14).toCents()).toBe(29);
+    expect(Money.fromCents(1).dividedBy(2).toCents()).toBe(1);
+    expect(Money.fromCents(-1).dividedBy(2).toCents()).toBe(-1);
+  });
+
+  it('rejects a divisor that is zero at six decimal places', () => {
+    expect(() => Money.fromCents(100).scaled(1, 1e-9)).toThrow(InvalidMoneyOperationError);
+  });
+});

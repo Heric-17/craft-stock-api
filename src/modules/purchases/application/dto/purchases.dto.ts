@@ -189,6 +189,11 @@ export interface SpendingByEstablishmentView extends SpendingTotalsView {
   establishmentName: string | null;
 }
 
+export interface SpendingByStockMaterialView extends SpendingTotalsView {
+  /** How the line is classified today; not a spending category. */
+  isStockMaterial: boolean;
+}
+
 /**
  * The spending dataset as the panel receives it: buckets by dimension, not
  * finished figures. The total of the period, the average ticket and the
@@ -200,4 +205,5 @@ export interface SpendingDatasetView {
   granularity: SpendingGranularity;
   byPeriod: SpendingByPeriodView[];
   byEstablishment: SpendingByEstablishmentView[];
+  byStockMaterial: SpendingByStockMaterialView[];
 }

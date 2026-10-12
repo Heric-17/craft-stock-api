@@ -1,5 +1,6 @@
 import { formatFractionalAmount } from '../../../shared/domain/money/fractional-amount';
 import type { Money } from '../../../shared/domain/money/money';
+import { saleLineTotal } from './sale-line-total';
 import { InvalidSaleError } from './sale.error';
 
 export interface SaleItemProps {
@@ -93,7 +94,7 @@ export class SaleItem {
    * how 120 g of flour turns into R$ 3,60 instead of R$ 3,36.
    */
   get lineTotal(): Money {
-    return this.priceBasisAmount.scaled(this.quantity, this.priceBasisQuantity);
+    return saleLineTotal(this);
   }
 
   /**
