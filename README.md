@@ -117,7 +117,7 @@ opção que depende delas é escolhida.
 
 As duas **impedem a inicialização** se faltarem em produção. É proposital: uma API sem
 `CORS_ORIGINS` responde a `curl` e falha em todo navegador, sem nada no log do servidor
-explicando. Ver [docs/DEPLOY.md](docs/DEPLOY.md).
+explicando.
 
 **Autenticação**
 
@@ -174,9 +174,8 @@ Processo de publicação independente de provedor: funciona do mesmo jeito num V
 `docker run`, em `docker compose`, ou em qualquer plataforma de contêiner gerenciada —
 sem nenhum arquivo de configuração específico de provedor neste repositório.
 
-Esta seção cobre o contêiner, as migrations e a verificação. O que só aparece quando um
-navegador passa a consumir a API — domínio, CORS, e a política do bucket de imagens —
-está em [docs/DEPLOY.md](docs/DEPLOY.md).
+Esta seção cobre o contêiner, as migrations, a verificação e o que só aparece quando um
+navegador passa a consumir a API: domínio, CORS e a política do bucket de imagens.
 
 ### Pré-requisitos
 
@@ -288,6 +287,57 @@ Como o entrypoint já faz a migration falhar a subida do contêiner (seção aci
 contêiner em execução já é indício forte de que a migration passou — mas `migrate
 status` é a única confirmação direta do estado do esquema.
 
+### Domínio, CORS e bucket de imagens
+
+**Domínio.** O cookie de sessão é `SameSite=Lax`, então o frontend e a API precisam estar no
+mesmo site registrável (`app.empresa.com.br` e `api.empresa.com.br`). Dois subdomínios de um
+domínio público de hospedagem, como `onrender.com`, contam como sites distintos e não
+servem. Cada instalação, portanto, precisa de domínio próprio.
+
+**CORS.** `CORS_ORIGINS` lista as origens exatas do frontend, sem curinga. Sem ela a API
+não sobe em produção.
+
+**Bucket de imagens (`STORAGE_PROVIDER=S3`).** O bucket é **público para leitura, com URL
+fixa**, e não usa URL pré-assinada: são fotos de insumo e de produto, sem dado sensível, e
+uma URL que expira quebraria imagens em telas abertas há muito tempo e impediria o cache
+no navegador. O que protege cada imagem é o nome do objeto, um UUID gerado pela API
+(`<uuid>.<extensão>`, nunca o nome enviado pelo cliente). Esse nome só protege enquanto
+**ninguém consegue listar o bucket**; por isso a política libera uma única ação:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadOfImageObjects",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::NOME_DO_BUCKET/*"
+    }
+  ]
+}
+```
+
+- `s3:GetObject` em `bucket/*` e **nada mais** para `Principal: "*"`. Em especial, **sem
+  `s3:ListBucket`**: com a listagem pública ligada, qualquer pessoa obtém todos os nomes e o
+  UUID deixa de proteger coisa alguma. Sem ela, um objeto inexistente responde `403` em
+  vez de `404`, o que é esperado.
+- Escrita e exclusão exigem credencial. A credencial da API (`AWS_ACCESS_KEY_ID` e
+  `AWS_SECRET_ACCESS_KEY`) precisa apenas de `s3:PutObject` e `s3:DeleteObject` em
+  `NOME_DO_BUCKET/*`; a API nunca lista nem lê o bucket.
+- Em *Block Public Access*, mantenha bloqueadas as ACLs públicas (`BlockPublicAcls` e
+  `IgnorePublicAcls`) e libere apenas as políticas públicas (`BlockPublicPolicy` e
+  `RestrictPublicBuckets` desligados), e deixe *Object Ownership* como *Bucket owner
+  enforced*. O acesso público vem da política acima, não de ACL por objeto.
+- `S3_PUBLIC_BASE_URL` é a base pública de leitura (o endereço do bucket ou de um CDN/domínio
+  na frente dele). A API monta cada `imageUrl` a partir dela; nada é fixo no código.
+- Cada objeto é gravado com `Cache-Control: public, max-age=31536000, immutable`. Como a
+  chave nunca é reaproveitada, trocar a imagem gera uma chave nova e não há nada a invalidar.
+
+Para conferir depois de configurar: o endereço de um objeto enviado abre sem credencial, e
+a listagem anônima do bucket (`curl https://BASE_PUBLICA/`) responde `403`, não uma lista.
+
 ### Reversão
 
 Voltar o CÓDIGO é trocar o contêiner pela imagem da versão anterior (mantenha a tag
@@ -321,7 +371,6 @@ Dockerfile                      imagem de produção (multi-estágio, usuário n
                                 entrypoint aplica a migration e só então inicia a API)
 docs/api-contract.md            forma das respostas de erro, códigos e rotas de sessão
 docs/auth-contract.md           transporte da sessão, cookie e decisões de segurança
-docs/DEPLOY.md                  domínio, CORS e política do bucket de imagens
 docs/RECOVERY.md                cópia de segurança e restauração do banco
 scripts/backup/                scripts de dump e restore do PostgreSQL
 prisma.config.ts                configuração do CLI do Prisma (inclui DATABASE_URL e o seed)
