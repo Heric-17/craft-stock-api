@@ -73,6 +73,6 @@ export class PrismaCompositeProductRepository implements CompositeProductReposit
     // stock movement points at a product.
     const saleItems = await this.prisma.saleItem.count({ where: { compositeProductId } });
 
-    return { saleItems, bomItems: 0, purchaseItems: 0, stockMovements: 0, stockAdjustments: 0 };
+    return { saleItems, bomItems: 0, purchaseItems: 0, stockMovements: 0, stockLosses: 0 };
   }
 }

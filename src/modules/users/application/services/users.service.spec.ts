@@ -7,7 +7,7 @@ import { InMemoryCompositeProductRepository } from '../../../composite-products/
 import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
 import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructure/persistence/in-memory-pending-invoice.repository';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
-import { InMemoryStockAdjustmentRepository } from '../../../../modules/materials/infrastructure/persistence/in-memory-stock-adjustment.repository';
+import { InMemoryStockLossRepository } from '../../../../modules/materials/infrastructure/persistence/in-memory-stock-loss.repository';
 import { InMemoryPurchaseRepository } from '../../../purchases/infrastructure/persistence/in-memory-purchase.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
 import { EmailAlreadyInUseError, UserNotFoundError } from '../../domain/user.error';
@@ -31,7 +31,7 @@ function buildService(): { service: UsersService; users: InMemoryUserRepository 
     purchases: new InMemoryPurchaseRepository(),
     pendingInvoices: new InMemoryPendingInvoiceRepository(),
     users,
-    stockAdjustments: new InMemoryStockAdjustmentRepository(),
+    stockLosses: new InMemoryStockLossRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
   };
 

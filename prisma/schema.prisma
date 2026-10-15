@@ -68,12 +68,12 @@ model Material {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
-  priceHistory     MaterialPriceHistory[]
-  bomItems         BomItem[]
-  saleItems        SaleItem[]
-  purchaseItems    PurchaseItem[]
-  stockMovements   StockMovementSnapshot[]
-  stockAdjustments StockAdjustment[]
+  priceHistory   MaterialPriceHistory[]
+  bomItems       BomItem[]
+  saleItems      SaleItem[]
+  purchaseItems  PurchaseItem[]
+  stockMovements StockMovementSnapshot[]
+  stockLosses    StockLoss[]
 
   // Materials are looked up by name constantly: BOM authoring, purchase entry,
   // NFC-e item matching.
@@ -202,17 +202,9 @@ model StockMovementSnapshot {
   material Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
 }
 
-// A manual change to a Material's stock, with its reason. Separate from
-// StockMovementSnapshot, which is only a sale's debit. Never updated or
-// deleted: a mistake is corrected by a REVERSAL row pointing at the original.
-// Permanent, not subject to the AuditLog retention window.
-enum StockAdjustmentKind {
-  MANUAL_ENTRY
-  MANUAL_LOSS
-  MANUAL_ADJUSTMENT
-  REVERSAL
-}
-
+// Stock lost: broken, expired, spoiled, missing. One row per loss, never
+// updated or deleted, and permanent (not subject to the AuditLog retention
+// window). The value lost is derived on read from the cost frozen here.
 enum StockLossReason {
   BREAKAGE
   EXPIRED
@@ -221,29 +213,23 @@ enum StockLossReason {
   OTHER
 }
 
-model StockAdjustment {
-  id                   String              @id @default(uuid())
-  materialId           String
-  kind                 StockAdjustmentKind
-  // The delta applied to stockQuantity, signed.
-  quantityDelta        Decimal             @db.Decimal(12, 3)
-  // Required for MANUAL_LOSS, absent otherwise (enforced in the domain entity).
-  reason               StockLossReason?
-  observation          String?
-  // The Material's packageCost and packageQuantity at the moment of the entry,
+model StockLoss {
+  id                String          @id @default(uuid())
+  materialId        String
+  // How much was lost, positive, in the Material's consumption unit.
+  quantity          Decimal         @db.Decimal(12, 3)
+  reason            StockLossReason
+  observation       String?
+  // The Material's packageCost and packageQuantity at the moment of the loss,
   // as a fraction like SaleItem's priceBasis*. The value is derived on read.
-  costBasisAmount      Decimal             @db.Decimal(12, 2)
-  costBasisQuantity    Decimal             @db.Decimal(12, 3)
-  // Set on a REVERSAL only. Unique: an entry is reversed at most once.
-  reversedAdjustmentId String?             @unique
-  createdAt            DateTime            @default(now())
+  costBasisAmount   Decimal         @db.Decimal(12, 2)
+  costBasisQuantity Decimal         @db.Decimal(12, 3)
+  createdAt         DateTime        @default(now())
 
-  material           Material         @relation(fields: [materialId], references: [id], onDelete: Restrict)
-  reversedAdjustment StockAdjustment? @relation("Reversal", fields: [reversedAdjustmentId], references: [id], onDelete: Restrict)
-  reversal           StockAdjustment? @relation("Reversal")
+  material Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
 
   @@index([materialId])
-  @@index([kind, createdAt])
+  @@index([createdAt])
 }
 
 // --- Purchases ---------------------------------------------------------

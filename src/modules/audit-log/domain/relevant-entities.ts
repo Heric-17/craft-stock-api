@@ -7,7 +7,7 @@
  */
 export const USER_RELEVANT_ENTITY_TYPES: readonly string[] = [
   'Material',
-  'StockAdjustment',
+  'StockLoss',
   'CompositeProduct',
   'Sale',
   'Purchase',

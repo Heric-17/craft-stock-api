@@ -209,7 +209,7 @@ describe('no result of a monetary division is persisted', () => {
     'bottleneck',
     'lowStock',
     'isActive',
-    // The worth of a stock adjustment is derived from the cost it froze.
+    // The worth of a stock loss is derived from the cost it froze.
     'value',
     'lossValue',
     'valueAtCost',
@@ -247,7 +247,7 @@ describe('no result of a monetary division is persisted', () => {
     expect(names('SaleItem')).toEqual(
       expect.arrayContaining(['priceBasisAmount', 'priceBasisQuantity']),
     );
-    expect(names('StockAdjustment')).toEqual(
+    expect(names('StockLoss')).toEqual(
       expect.arrayContaining(['costBasisAmount', 'costBasisQuantity']),
     );
   });

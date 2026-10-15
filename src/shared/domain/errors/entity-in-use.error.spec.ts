@@ -9,7 +9,7 @@ const NONE: EntityReferenceCounts = {
   bomItems: 0,
   purchaseItems: 0,
   stockMovements: 0,
-  stockAdjustments: 0,
+  stockLosses: 0,
 };
 
 describe('totalReferences', () => {
@@ -24,7 +24,7 @@ describe('totalReferences', () => {
         bomItems: 2,
         purchaseItems: 3,
         stockMovements: 4,
-        stockAdjustments: 5,
+        stockLosses: 5,
       }),
     ).toBe(15);
   });
@@ -48,7 +48,7 @@ describe('EntityInUseError', () => {
       bomItems: 2,
       purchaseItems: 1,
       stockMovements: 0,
-      stockAdjustments: 4,
+      stockLosses: 4,
     });
 
     expect(error.details).toEqual({
@@ -58,7 +58,7 @@ describe('EntityInUseError', () => {
       bomItems: 2,
       purchaseItems: 1,
       stockMovements: 0,
-      stockAdjustments: 4,
+      stockLosses: 4,
       total: 10,
     });
   });

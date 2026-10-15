@@ -14,8 +14,8 @@ export interface EntityReferenceCounts {
   bomItems: number;
   purchaseItems: number;
   stockMovements: number;
-  /** Manual stock changes recorded for a Material. */
-  stockAdjustments: number;
+  /** Losses recorded for a Material. */
+  stockLosses: number;
 }
 
 export interface EntityInUseDetails extends EntityReferenceCounts {
@@ -31,7 +31,7 @@ export function totalReferences(counts: EntityReferenceCounts): number {
     counts.bomItems +
     counts.purchaseItems +
     counts.stockMovements +
-    counts.stockAdjustments
+    counts.stockLosses
   );
 }
 

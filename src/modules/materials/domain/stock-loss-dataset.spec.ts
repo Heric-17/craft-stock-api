@@ -1,5 +1,5 @@
 import { Money } from '../../../shared/domain/money/money';
-import { StockAdjustment } from './stock-adjustment.entity';
+import { StockLoss } from './stock-loss.entity';
 import { buildStockLossDataset, type StockLossFact } from './stock-loss-dataset';
 import type { StockLossReason } from './stock-loss-reason.enum';
 
@@ -15,16 +15,14 @@ function loss(input: {
 }): StockLossFact {
   return {
     materialName: input.materialName,
-    loss: new StockAdjustment({
+    loss: new StockLoss({
       id: input.id,
       materialId: input.materialId,
-      kind: 'MANUAL_LOSS',
-      quantityDelta: -input.quantity,
+      quantity: input.quantity,
       reason: input.reason,
       observation: null,
       costBasisAmount: Money.fromDecimalString(input.costBasisAmount ?? '40.00'),
       costBasisQuantity: input.costBasisQuantity ?? 1,
-      reversedAdjustmentId: null,
       createdAt: new Date(input.createdAt),
     }),
   };

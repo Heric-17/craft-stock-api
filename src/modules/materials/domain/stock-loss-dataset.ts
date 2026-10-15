@@ -8,25 +8,24 @@ import type {
   StockLossDatasetQuery,
   StockLossTotals,
 } from './ports/stock-loss-dataset.port';
-import type { StockAdjustment } from './stock-adjustment.entity';
+import type { StockLoss } from './stock-loss.entity';
 import { STOCK_LOSS_REASONS, type StockLossReason } from './stock-loss-reason.enum';
 
-/** A loss that was not reversed, with the name of its Material. */
+/** A loss with the name of its Material. */
 export interface StockLossFact {
-  loss: StockAdjustment;
+  loss: StockLoss;
   materialName: string;
 }
 
 const emptyTotals = (): StockLossTotals => ({ lossCount: 0, lossValue: Money.zero() });
 
-function add(totals: StockLossTotals, loss: StockAdjustment): StockLossTotals {
+function add(totals: StockLossTotals, loss: StockLoss): StockLossTotals {
   return { lossCount: totals.lossCount + 1, lossValue: totals.lossValue.plus(loss.value) };
 }
 
 /**
- * Folds losses into the dataset. `facts` are the `MANUAL_LOSS` entries of the
- * period that no reversal undid; the adapter filters them. Each loss adds its
- * own rounded value, so a total equals the rows of the list, which a database
+ * Folds the losses of the period into the dataset. Each loss adds its own
+ * rounded value, so a total equals the rows of the list, which a database
  * `SUM` over the decimals would not.
  */
 export function buildStockLossDataset(
@@ -45,8 +44,7 @@ export function buildStockLossDataset(
     const month = businessMonthOf(loss.createdAt);
     byMonth.set(month, add(byMonth.get(month) ?? emptyTotals(), loss));
 
-    const reason = loss.reason as StockLossReason;
-    byReason.set(reason, add(byReason.get(reason) as StockLossTotals, loss));
+    byReason.set(loss.reason, add(byReason.get(loss.reason) as StockLossTotals, loss));
 
     byMaterial.set(loss.materialId, {
       materialId: loss.materialId,

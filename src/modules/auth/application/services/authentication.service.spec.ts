@@ -6,7 +6,7 @@ import { Argon2PasswordHasher } from '../../../../shared/infrastructure/security
 import { InMemoryCompositeProductRepository } from '../../../composite-products/infrastructure/persistence/in-memory-composite-product.repository';
 import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructure/persistence/in-memory-pending-invoice.repository';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
-import { InMemoryStockAdjustmentRepository } from '../../../../modules/materials/infrastructure/persistence/in-memory-stock-adjustment.repository';
+import { InMemoryStockLossRepository } from '../../../../modules/materials/infrastructure/persistence/in-memory-stock-loss.repository';
 import { InMemoryPurchaseRepository } from '../../../purchases/infrastructure/persistence/in-memory-purchase.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
 import { User } from '../../../users/domain/user.entity';
@@ -58,7 +58,7 @@ async function buildService(): Promise<{
     sales: new InMemorySaleRepository(),
     purchases: new InMemoryPurchaseRepository(),
     pendingInvoices: new InMemoryPendingInvoiceRepository(),
-    stockAdjustments: new InMemoryStockAdjustmentRepository(),
+    stockLosses: new InMemoryStockLossRepository(),
     users,
     refreshTokens,
   };

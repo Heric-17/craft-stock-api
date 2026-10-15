@@ -4,7 +4,7 @@ import { PrismaRefreshTokenRepository } from '../../../modules/auth/infrastructu
 import { PrismaCompositeProductRepository } from '../../../modules/composite-products/infrastructure/persistence/prisma-composite-product.repository';
 import { PrismaPendingInvoiceRepository } from '../../../modules/invoices/infrastructure/persistence/prisma-pending-invoice.repository';
 import { PrismaMaterialRepository } from '../../../modules/materials/infrastructure/persistence/prisma-material.repository';
-import { PrismaStockAdjustmentRepository } from '../../../modules/materials/infrastructure/persistence/prisma-stock-adjustment.repository';
+import { PrismaStockLossRepository } from '../../../modules/materials/infrastructure/persistence/prisma-stock-loss.repository';
 import { PrismaPurchaseRepository } from '../../../modules/purchases/infrastructure/persistence/prisma-purchase.repository';
 import { PrismaSaleRepository } from '../../../modules/sales/infrastructure/persistence/prisma-sale.repository';
 import { PrismaUserRepository } from '../../../modules/users/infrastructure/persistence/prisma-user.repository';
@@ -29,7 +29,7 @@ export class PrismaUnitOfWork implements UnitOfWork {
   private buildContext(tx: Prisma.TransactionClient): RepositoryContext {
     return {
       materials: new PrismaMaterialRepository(tx),
-      stockAdjustments: new PrismaStockAdjustmentRepository(tx),
+      stockLosses: new PrismaStockLossRepository(tx),
       compositeProducts: new PrismaCompositeProductRepository(tx),
       sales: new PrismaSaleRepository(tx),
       purchases: new PrismaPurchaseRepository(tx),

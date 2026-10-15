@@ -14,7 +14,7 @@ export class StockEntryDto {
   @IsIn(STOCK_ENTRY_SOURCES)
   source!: StockEntrySource;
 
-  /** Never negative: taking stock out goes through `stock-adjustments`. */
+  /** Never negative: taking stock out goes through `losses`. */
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 3 })
   @Min(0)

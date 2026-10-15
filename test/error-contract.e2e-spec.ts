@@ -261,7 +261,7 @@ describe('Error contract (e2e)', () => {
         bomItems: 1,
         purchaseItems: 0,
         stockMovements: 0,
-        stockAdjustments: 0,
+        stockLosses: 0,
         total: 1,
       });
     });

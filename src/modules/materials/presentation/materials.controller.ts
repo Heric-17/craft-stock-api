@@ -23,27 +23,21 @@ import type {
   MaterialPriceHistoryView,
   MaterialView,
   StockEntryInput,
-  StockEntryResultView,
   UpdateMaterialInput,
 } from '../application/dto/materials.dto';
 import type {
-  RecordStockAdjustmentInput,
-  StockAdjustmentHistoryPageView,
-  StockAdjustmentResultView,
   StockLossDatasetView,
   StockLossPageView,
-} from '../application/dto/stock-adjustments.dto';
+  StockLossResultView,
+} from '../application/dto/stock-losses.dto';
 import { MaterialInventoryService } from '../application/services/material-inventory.service';
-import { MaterialLossesService } from '../application/services/material-losses.service';
 import { MaterialsService } from '../application/services/materials.service';
-import { StockAdjustmentHistoryService } from '../application/services/stock-adjustment-history.service';
-import { StockAdjustmentsService } from '../application/services/stock-adjustments.service';
+import { StockLossesService } from '../application/services/stock-losses.service';
 import { ChangeConsumptionUnitDto } from './dto/consumption-unit.dto';
 import { CreateMaterialDto } from './dto/create-material.dto';
-import { CreateStockAdjustmentDto } from './dto/create-stock-adjustment.dto';
+import { CreateStockLossDto } from './dto/create-stock-loss.dto';
 import { InventorySummaryQueryDto } from './dto/inventory-summary-query.dto';
 import { ListLossesQueryDto } from './dto/list-losses-query.dto';
-import { ListStockAdjustmentsQueryDto } from './dto/list-stock-adjustments-query.dto';
 import { LossesDatasetQueryDto } from './dto/losses-dataset-query.dto';
 import { SearchMaterialsQueryDto } from './dto/search-materials-query.dto';
 import { StockEntryDto } from './dto/stock-entry.dto';
@@ -54,9 +48,7 @@ export class MaterialsController {
   constructor(
     private readonly materialsService: MaterialsService,
     private readonly materialInventory: MaterialInventoryService,
-    private readonly stockAdjustments: StockAdjustmentsService,
-    private readonly stockAdjustmentHistory: StockAdjustmentHistoryService,
-    private readonly materialLosses: MaterialLossesService,
+    private readonly stockLosses: StockLossesService,
     private readonly env: EnvService,
   ) {}
 
@@ -101,7 +93,7 @@ export class MaterialsController {
   /** Paginated loss history. Totals come from `losses/dataset`, not from the pages. Declared before `:id`. */
   @Get('losses')
   listLosses(@Query() query: ListLossesQueryDto): Promise<StockLossPageView> {
-    return this.materialLosses.list({
+    return this.stockLosses.list({
       ...(query.from !== undefined ? { from: new Date(query.from) } : {}),
       ...(query.to !== undefined ? { to: new Date(query.to) } : {}),
       ...(query.materialId !== undefined ? { materialId: query.materialId } : {}),
@@ -114,7 +106,7 @@ export class MaterialsController {
   /** Losses by month, reason and material; the panel folds the cells. Declared before `:id`. */
   @Get('losses/dataset')
   getLossesDataset(@Query() query: LossesDatasetQueryDto): Promise<StockLossDatasetView> {
-    return this.materialLosses.getDataset({ from: new Date(query.from), to: new Date(query.to) });
+    return this.stockLosses.getDataset({ from: new Date(query.from), to: new Date(query.to) });
   }
 
   /**
@@ -157,61 +149,23 @@ export class MaterialsController {
     return this.materialsService.changeConsumptionUnit(id, dto.consumptionUnit);
   }
 
-  /** The Material's manual stock changes, newest first, reversals included. */
-  @Get(':id/stock-adjustments')
-  listStockAdjustments(
-    @Param('id') id: string,
-    @Query() query: ListStockAdjustmentsQueryDto,
-  ): Promise<StockAdjustmentHistoryPageView> {
-    return this.stockAdjustmentHistory.list({
-      materialId: id,
-      ...(query.kind !== undefined ? { kind: query.kind } : {}),
-      limit: query.limit ?? DEFAULT_PAGE_SIZE,
-      offset: query.offset ?? 0,
-    });
-  }
-
-  /** Records a loss with its reason, or reverses an earlier entry. Entries and counts stay on `stock-entries`. */
-  @Post(':id/stock-adjustments')
+  /** Records a loss: takes it out of stock and keeps it, at the cost of the moment. */
+  @Post(':id/losses')
   @HttpCode(HttpStatus.CREATED)
-  recordStockAdjustment(
+  recordLoss(
     @Param('id') id: string,
-    @Body() dto: CreateStockAdjustmentDto,
-  ): Promise<StockAdjustmentResultView> {
-    if (dto.kind === 'MANUAL_LOSS') {
-      if (dto.reversedAdjustmentId !== undefined) {
-        throw new BadRequestException('reversedAdjustmentId is only allowed for REVERSAL entries.');
-      }
-
-      const input: RecordStockAdjustmentInput = {
-        kind: 'MANUAL_LOSS',
-        quantity: dto.quantity as number,
-        reason: dto.reason as NonNullable<CreateStockAdjustmentDto['reason']>,
-        ...(dto.observation !== undefined ? { observation: dto.observation } : {}),
-      };
-
-      return this.stockAdjustments.record(id, input);
-    }
-
-    if (dto.quantity !== undefined || dto.reason !== undefined) {
-      throw new BadRequestException(
-        'quantity and reason are only allowed for MANUAL_LOSS entries.',
-      );
-    }
-
-    return this.stockAdjustments.record(id, {
-      kind: 'REVERSAL',
-      reversedAdjustmentId: dto.reversedAdjustmentId as string,
+    @Body() dto: CreateStockLossDto,
+  ): Promise<StockLossResultView> {
+    return this.stockLosses.record(id, {
+      quantity: dto.quantity,
+      reason: dto.reason,
       ...(dto.observation !== undefined ? { observation: dto.observation } : {}),
     });
   }
 
   @Post(':id/stock-entries')
   @HttpCode(HttpStatus.OK)
-  registerStockEntry(
-    @Param('id') id: string,
-    @Body() dto: StockEntryDto,
-  ): Promise<StockEntryResultView> {
+  registerStockEntry(@Param('id') id: string, @Body() dto: StockEntryDto): Promise<MaterialView> {
     if (dto.source === 'MANUAL' && dto.invoicePackageCost !== undefined) {
       throw new BadRequestException('invoicePackageCost is only allowed for INVOICE_SYNC entries.');
     }

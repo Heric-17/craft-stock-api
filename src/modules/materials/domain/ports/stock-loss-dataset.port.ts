@@ -31,10 +31,9 @@ export interface StockLossByMaterial extends StockLossTotals {
 }
 
 /**
- * Losses recorded in `[from, to)` that were not reversed, aggregated by
- * dimension. A reversed loss drops out of every cell, in the month it was
- * recorded in. Every month of the range and every reason is present, zeros
- * included; `byMaterial` lists only the materials that have losses.
+ * Losses recorded in `[from, to)`, aggregated by dimension. Every month of the
+ * range and every reason is present, zeros included; `byMaterial` lists only
+ * the materials that have losses.
  */
 export interface StockLossDataset {
   from: Date;

@@ -41,18 +41,11 @@ export interface InsufficientStockDetails {
 }
 
 /**
- * Raised when a manual operation would take more out of a `Material` than it
- * holds. Unlike a sale's debit, which zeroes the balance, a manual loss above
- * the balance means the user's count is wrong, so it is refused. The balance
- * travels in `details`.
+ * Raised when a loss is larger than what a `Material` holds. Unlike a sale's
+ * debit, which zeroes the balance, a loss above the balance means the user's
+ * count is wrong, so it is refused. The balance travels in `details`.
  */
 export class InsufficientStockError extends DomainError<InsufficientStockDetails> {}
 
-/** Raised when a `StockAdjustment` breaks the rules of its kind. */
-export class InvalidStockAdjustmentError extends DomainError {}
-
-/** Raised when a use case addresses a `StockAdjustment` that does not exist. */
-export class StockAdjustmentNotFoundError extends DomainError {}
-
-/** Raised when a `StockAdjustment` is reversed a second time. */
-export class StockAdjustmentAlreadyReversedError extends DomainError {}
+/** Raised when a `StockLoss` breaks its rules. */
+export class InvalidStockLossError extends DomainError {}
