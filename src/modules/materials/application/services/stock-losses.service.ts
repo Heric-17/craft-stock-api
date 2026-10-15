@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
+import type { Material } from '../../domain/material.entity';
 import { MaterialNotFoundError, StockLossNotFoundError } from '../../domain/material.error';
 import {
   STOCK_LOSS_DATASET_PORT,
@@ -72,7 +73,7 @@ export class StockLossesService {
       await ctx.stockLosses.save(loss);
 
       return {
-        ...StockLossViewMapper.toView(loss, material.name),
+        ...StockLossViewMapper.toView(loss, material),
         stockQuantityAfter: updated.stockQuantity,
       };
     });
@@ -93,9 +94,14 @@ export class StockLossesService {
       }
 
       const material = await ctx.materials.findById(loss.materialId);
+
+      if (!material) {
+        throw new MaterialNotFoundError(`Material ${loss.materialId} does not exist.`);
+      }
+
       await ctx.stockLosses.delete(lossId);
 
-      return StockLossViewMapper.toView(loss, material?.name ?? loss.materialId);
+      return StockLossViewMapper.toView(loss, material);
     });
   }
 
@@ -109,15 +115,20 @@ export class StockLossesService {
       offset: input.offset,
     });
 
-    const names = new Map<string, string>();
+    const materialsById = new Map<string, Material>();
     for (const materialId of new Set(page.losses.map((loss) => loss.materialId))) {
       const material = await this.materials.findById(materialId);
-      names.set(materialId, material?.name ?? materialId);
+
+      if (!material) {
+        throw new MaterialNotFoundError(`Material ${materialId} does not exist.`);
+      }
+
+      materialsById.set(materialId, material);
     }
 
     return {
       items: page.losses.map((loss) =>
-        StockLossViewMapper.toView(loss, names.get(loss.materialId) as string),
+        StockLossViewMapper.toView(loss, materialsById.get(loss.materialId) as Material),
       ),
       total: page.total,
       limit: page.limit,

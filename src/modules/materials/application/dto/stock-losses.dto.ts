@@ -1,4 +1,5 @@
 import type { PageView } from '../../../../shared/application/pagination/page-view';
+import type { ConsumptionUnit } from '../../domain/consumption-unit';
 import type { StockLossReason } from '../../domain/stock-loss-reason.enum';
 
 /** A loss typed in: how much was lost, and why. */
@@ -13,6 +14,9 @@ export interface StockLossView {
   id: string;
   materialId: string;
   materialName: string;
+  /** The Material's unit as it is now, not frozen with the cost. */
+  consumptionUnit: ConsumptionUnit;
+  consumptionUnitSymbol: string;
   quantity: number;
   reason: StockLossReason;
   observation: string | null;

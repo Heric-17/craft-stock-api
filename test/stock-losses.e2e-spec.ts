@@ -11,6 +11,7 @@ import type {
   StockLossDatasetView,
   StockLossPageView,
   StockLossResultView,
+  StockLossView,
 } from '../src/modules/materials/application/dto/stock-losses.dto';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import type { ErrorResponseBody } from '../src/shared/presentation/filters/all-exceptions.filter';
@@ -610,6 +611,64 @@ describe('Stock losses (e2e)', () => {
       const deletion = entries.find((entry) => entry.operation === 'DELETE');
       expect(deletion?.entityType).toBe('StockLoss');
       expect(deletion?.changes.reason.old).toBe('BREAKAGE');
+    });
+  });
+
+  describe('the unit of the Material in every response', () => {
+    // 500 g of flour: "g" is what the screen writes next to the quantity.
+    it('comes with the creation, the list and the removal of a loss', async () => {
+      const { id } = await createMaterial({
+        packageCost: '28.00',
+        packageQuantity: 1000,
+        consumptionUnit: 'GRAM',
+        stockQuantity: 500,
+      });
+
+      const created = (
+        await postLoss(id, { quantity: 120, reason: 'SPOILAGE' }).expect(HttpStatus.CREATED)
+      ).body as StockLossResultView;
+      const listed = (
+        await request(server)
+          .get('/materials/losses')
+          .set('Authorization', authHeader)
+          .query({ materialId: id })
+          .expect(HttpStatus.OK)
+      ).body as StockLossPageView;
+      const removed = (
+        await request(server)
+          .delete(`/materials/losses/${created.id}`)
+          .set('Authorization', authHeader)
+          .expect(HttpStatus.OK)
+      ).body as StockLossView;
+
+      for (const view of [created, listed.items[0], removed]) {
+        expect(view).toMatchObject({ consumptionUnit: 'GRAM', consumptionUnitSymbol: 'g' });
+      }
+    });
+
+    it('is the unit of each Material, in a list with more than one', async () => {
+      const biscuit = await createMaterial();
+      const oil = await createMaterial({
+        packageCost: '9.00',
+        packageQuantity: 900,
+        consumptionUnit: 'MILLILITER',
+        stockQuantity: 900,
+      });
+      await postLoss(biscuit.id, { quantity: 1, reason: 'LOST' }).expect(HttpStatus.CREATED);
+      await postLoss(oil.id, { quantity: 100, reason: 'SPOILAGE' }).expect(HttpStatus.CREATED);
+
+      const page = (
+        await request(server)
+          .get('/materials/losses')
+          .set('Authorization', authHeader)
+          .query({ limit: 100 })
+          .expect(HttpStatus.OK)
+      ).body as StockLossPageView;
+      const unitOf = (materialId: string) =>
+        page.items.find((item) => item.materialId === materialId)?.consumptionUnitSymbol;
+
+      expect(unitOf(biscuit.id)).toBe('un');
+      expect(unitOf(oil.id)).toBe('ml');
     });
   });
 

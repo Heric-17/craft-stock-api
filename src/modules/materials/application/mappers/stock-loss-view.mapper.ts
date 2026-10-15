@@ -1,3 +1,5 @@
+import { consumptionUnitSymbol } from '../../domain/consumption-unit';
+import type { Material } from '../../domain/material.entity';
 import type { StockLossDataset, StockLossTotals } from '../../domain/ports/stock-loss-dataset.port';
 import type { StockLoss } from '../../domain/stock-loss.entity';
 import type {
@@ -7,11 +9,16 @@ import type {
 } from '../dto/stock-losses.dto';
 
 export class StockLossViewMapper {
-  static toView(loss: StockLoss, materialName: string): StockLossView {
+  static toView(
+    loss: StockLoss,
+    material: Pick<Material, 'name' | 'consumptionUnit'>,
+  ): StockLossView {
     return {
       id: loss.id,
       materialId: loss.materialId,
-      materialName,
+      materialName: material.name,
+      consumptionUnit: material.consumptionUnit,
+      consumptionUnitSymbol: consumptionUnitSymbol(material.consumptionUnit),
       quantity: loss.quantity,
       reason: loss.reason,
       observation: loss.observation,

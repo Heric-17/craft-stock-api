@@ -74,6 +74,8 @@ describe('StockLossesService', () => {
       expect(result).toMatchObject({
         materialId: 'biscuit',
         materialName: 'Bolacha',
+        consumptionUnit: 'UNIT',
+        consumptionUnitSymbol: 'un',
         quantity: 5,
         reason: 'BREAKAGE',
         observation: 'caiu da caixa',
@@ -189,6 +191,8 @@ describe('StockLossesService', () => {
       expect(removed).toMatchObject({
         id: recorded.id,
         materialName: 'Bolacha',
+        consumptionUnit: 'UNIT',
+        consumptionUnitSymbol: 'un',
         quantity: 5,
         value: '5.00',
       });
@@ -244,7 +248,12 @@ describe('StockLossesService', () => {
       expect(first.items.map((item) => item.id)).toEqual(['b', 'c']);
       expect(second.items.map((item) => item.id)).toEqual(['a']);
       expect(first).toMatchObject({ total: 3, limit: 2, offset: 0 });
-      expect(first.items[0]).toMatchObject({ materialName: 'Bolacha', value: '1.00' });
+      expect(first.items[0]).toMatchObject({
+        materialName: 'Bolacha',
+        consumptionUnit: 'UNIT',
+        consumptionUnitSymbol: 'un',
+        value: '1.00',
+      });
     });
 
     it('breaks a tie on the id, so losses at the same instant keep their place', async () => {
@@ -284,6 +293,30 @@ describe('StockLossesService', () => {
       expect(byMaterial.items.map((item) => item.id)).toEqual(['c', 'a']);
       expect(byPeriod.items.map((item) => item.id)).toEqual(['b', 'a']);
       expect(byPeriod.total).toBe(2);
+    });
+
+    it('gives the unit of each Material, as it is now', async () => {
+      const { service, materials, losses } = buildService();
+      await materials.save(buildMaterial());
+      await materials.save(
+        buildMaterial({
+          id: 'flour',
+          name: 'Farinha',
+          consumptionUnit: 'GRAM',
+          stockQuantity: 500,
+        }),
+      );
+      await losses.save(storedLoss('a', 'biscuit', '2026-03-01T12:00:00Z'));
+      await losses.save(storedLoss('b', 'flour', '2026-03-02T12:00:00Z'));
+
+      const page = await service.list({ limit: 10, offset: 0 });
+
+      expect(
+        page.items.map((item) => [item.id, item.consumptionUnit, item.consumptionUnitSymbol]),
+      ).toEqual([
+        ['b', 'GRAM', 'g'],
+        ['a', 'UNIT', 'un'],
+      ]);
     });
 
     it('answers an offset past the total with an empty page', async () => {
