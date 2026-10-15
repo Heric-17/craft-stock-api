@@ -14,8 +14,18 @@ import { StockLossMapper } from './mappers/stock-loss.mapper';
 export class PrismaStockLossRepository implements StockLossRepository {
   constructor(@Inject(PRISMA_CLIENT) private readonly prisma: Prisma.TransactionClient) {}
 
+  async findById(id: string): Promise<StockLoss | null> {
+    const row = await this.prisma.stockLoss.findUnique({ where: { id } });
+
+    return row ? StockLossMapper.toDomain(row) : null;
+  }
+
   async save(loss: StockLoss): Promise<void> {
     await this.prisma.stockLoss.create({ data: StockLossMapper.toPersistence(loss) });
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.prisma.stockLoss.delete({ where: { id } });
   }
 
   async findPage(query: StockLossListQuery): Promise<StockLossPage> {

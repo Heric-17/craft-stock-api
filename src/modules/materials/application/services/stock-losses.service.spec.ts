@@ -2,7 +2,11 @@ import type { RepositoryContext } from '../../../../shared/domain/persistence/un
 import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistence/in-memory-unit-of-work';
 import { Money } from '../../../../shared/domain/money/money';
 import { Material, type MaterialProps } from '../../domain/material.entity';
-import { InsufficientStockError, MaterialNotFoundError } from '../../domain/material.error';
+import {
+  InsufficientStockError,
+  MaterialNotFoundError,
+  StockLossNotFoundError,
+} from '../../domain/material.error';
 import { StockLoss } from '../../domain/stock-loss.entity';
 import { InMemoryStockLossDatasetAdapter } from '../../infrastructure/analytics/in-memory-stock-loss-dataset.adapter';
 import { InMemoryMaterialRepository } from '../../infrastructure/persistence/in-memory-material.repository';
@@ -171,6 +175,58 @@ describe('StockLossesService', () => {
       await expect(service.record('nothing', { quantity: 1, reason: 'LOST' })).rejects.toThrow(
         MaterialNotFoundError,
       );
+    });
+  });
+
+  describe('remove', () => {
+    it('removes the loss and leaves the stock exactly as it is', async () => {
+      const { service, materials, losses } = buildService();
+      await materials.save(buildMaterial());
+      const recorded = await service.record('biscuit', { quantity: 5, reason: 'BREAKAGE' });
+
+      const removed = await service.remove(recorded.id);
+
+      expect(removed).toMatchObject({
+        id: recorded.id,
+        materialName: 'Bolacha',
+        quantity: 5,
+        value: '5.00',
+      });
+      expect(losses.all()).toHaveLength(0);
+      // The loss took 5 out of 10, and removing it does not put them back.
+      expect((await materials.findById('biscuit'))?.stockQuantity).toBe(5);
+    });
+
+    it('takes the loss out of the list and out of the totals', async () => {
+      const { service, materials } = buildService();
+      await materials.save(buildMaterial());
+      const wrong = await service.record('biscuit', { quantity: 5, reason: 'BREAKAGE' });
+      await service.record('biscuit', { quantity: 1, reason: 'LOST' });
+      const period = {
+        from: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        to: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      };
+
+      await service.remove(wrong.id);
+
+      const page = await service.list({ limit: 20, offset: 0 });
+      const dataset = await service.getDataset(period);
+      expect(page.total).toBe(1);
+      expect(page.items[0].quantity).toBe(1);
+      expect(dataset.byMaterial).toEqual([
+        { materialId: 'biscuit', materialName: 'Bolacha', lossCount: 1, lossValue: '1.00' },
+      ]);
+    });
+
+    it('throws StockLossNotFoundError for a loss that does not exist, or was already removed', async () => {
+      const { service, materials } = buildService();
+      await materials.save(buildMaterial());
+      const recorded = await service.record('biscuit', { quantity: 1, reason: 'LOST' });
+
+      await expect(service.remove('nothing')).rejects.toThrow(StockLossNotFoundError);
+
+      await service.remove(recorded.id);
+      await expect(service.remove(recorded.id)).rejects.toThrow(StockLossNotFoundError);
     });
   });
 

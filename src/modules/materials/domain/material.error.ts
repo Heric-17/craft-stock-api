@@ -49,3 +49,6 @@ export class InsufficientStockError extends DomainError<InsufficientStockDetails
 
 /** Raised when a `StockLoss` breaks its rules. */
 export class InvalidStockLossError extends DomainError {}
+
+/** Raised when a use case addresses a `StockLoss` that does not exist. */
+export class StockLossNotFoundError extends DomainError {}

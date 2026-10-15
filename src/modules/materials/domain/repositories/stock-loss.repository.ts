@@ -22,9 +22,11 @@ export interface StockLossPage {
   offset: number;
 }
 
-/** Append-only: there is no update and no delete. */
+/** A loss is never edited. It can be removed when the user recorded it by mistake. */
 export interface StockLossRepository {
+  findById(id: string): Promise<StockLoss | null>;
   save(loss: StockLoss): Promise<void>;
+  delete(id: string): Promise<void>;
   /** Newest first; ties on the creation instant are broken on `id`. */
   findPage(query: StockLossListQuery): Promise<StockLossPage>;
 }

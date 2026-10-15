@@ -478,6 +478,141 @@ describe('Stock losses (e2e)', () => {
     });
   });
 
+  describe('DELETE /materials/losses/:lossId', () => {
+    const removeLoss = (lossId: string) =>
+      request(server).delete(`/materials/losses/${lossId}`).set('Authorization', authHeader);
+
+    // 10 biscuits, 5 lost by mistake: removing the loss clears the total, and the
+    // stock stays at 5 until the user puts the 5 back.
+    it('removes the loss, answers with what was removed and leaves the stock alone', async () => {
+      const { id, name } = await createMaterial();
+      const loss = (
+        await postLoss(id, { quantity: 5, reason: 'BREAKAGE' }).expect(HttpStatus.CREATED)
+      ).body as StockLossResultView;
+
+      const response = await removeLoss(loss.id).expect(HttpStatus.OK);
+
+      expect(response.body).toMatchObject({
+        id: loss.id,
+        materialId: id,
+        materialName: name,
+        quantity: 5,
+        value: '5.00',
+      });
+      expect((await getMaterial(id)).stockQuantity).toBe(5);
+      expect(await prisma.stockLoss.count({ where: { materialId: id } })).toBe(0);
+    });
+
+    it('takes the loss out of the list and out of the monthly total', async () => {
+      const { id } = await createMaterial({ stockQuantity: 50 });
+      const kept = await prisma.stockLoss.create({
+        data: {
+          id: randomUUID(),
+          materialId: id,
+          quantity: 1,
+          reason: 'LOST',
+          costBasisAmount: '1.00',
+          costBasisQuantity: 1,
+          createdAt: new Date('2094-03-05T15:00:00.000Z'),
+        },
+      });
+      const wrong = await prisma.stockLoss.create({
+        data: {
+          id: randomUUID(),
+          materialId: id,
+          quantity: 5,
+          reason: 'BREAKAGE',
+          costBasisAmount: '1.00',
+          costBasisQuantity: 1,
+          createdAt: new Date('2094-03-06T15:00:00.000Z'),
+        },
+      });
+      const period = { from: '2094-03-01T03:00:00.000Z', to: '2094-04-01T03:00:00.000Z' };
+      const monthTotal = async () =>
+        (
+          (
+            await request(server)
+              .get('/materials/losses/dataset')
+              .set('Authorization', authHeader)
+              .query(period)
+              .expect(HttpStatus.OK)
+          ).body as StockLossDatasetView
+        ).byMonth[0].lossValue;
+      expect(await monthTotal()).toBe('6.00');
+
+      await removeLoss(wrong.id).expect(HttpStatus.OK);
+
+      expect(await monthTotal()).toBe('1.00');
+      const list = (
+        await request(server)
+          .get('/materials/losses')
+          .set('Authorization', authHeader)
+          .query({ materialId: id })
+          .expect(HttpStatus.OK)
+      ).body as StockLossPageView;
+      expect(list.items.map((item) => item.id)).toEqual([kept.id]);
+    });
+
+    it('answers 422 STOCK_LOSS_NOT_FOUND for a loss that does not exist or was already removed', async () => {
+      const { id } = await createMaterial();
+      const loss = (await postLoss(id, { quantity: 1, reason: 'LOST' }).expect(HttpStatus.CREATED))
+        .body as StockLossResultView;
+
+      const unknown = await removeLoss(randomUUID()).expect(HttpStatus.UNPROCESSABLE_ENTITY);
+      await removeLoss(loss.id).expect(HttpStatus.OK);
+      const again = await removeLoss(loss.id).expect(HttpStatus.UNPROCESSABLE_ENTITY);
+
+      expect((unknown.body as ErrorResponseBody).code).toBe('STOCK_LOSS_NOT_FOUND');
+      expect((again.body as ErrorResponseBody).code).toBe('STOCK_LOSS_NOT_FOUND');
+    });
+
+    it('lets the Material be deleted once its only loss is removed', async () => {
+      const { id } = await createMaterial();
+      const loss = (await postLoss(id, { quantity: 1, reason: 'LOST' }).expect(HttpStatus.CREATED))
+        .body as StockLossResultView;
+      await request(server)
+        .delete(`/materials/${id}`)
+        .set('Authorization', authHeader)
+        .expect(HttpStatus.UNPROCESSABLE_ENTITY);
+
+      await removeLoss(loss.id).expect(HttpStatus.OK);
+
+      await request(server)
+        .delete(`/materials/${id}`)
+        .set('Authorization', authHeader)
+        .expect(HttpStatus.NO_CONTENT);
+    });
+
+    it('stays in the audit trail, with what was removed', async () => {
+      const { id } = await createMaterial();
+      const loss = (
+        await postLoss(id, { quantity: 5, reason: 'BREAKAGE' }).expect(HttpStatus.CREATED)
+      ).body as StockLossResultView;
+      await removeLoss(loss.id).expect(HttpStatus.OK);
+
+      const response = await request(server)
+        .get('/audit-log/activity')
+        .set('Authorization', authHeader)
+        .query({ limit: 100 })
+        .expect(HttpStatus.OK);
+      const entries = (
+        response.body as {
+          items: {
+            entityType: string;
+            entityId: string;
+            operation: string;
+            changes: Record<string, { old: unknown }>;
+          }[];
+        }
+      ).items.filter((item) => item.entityId === loss.id);
+
+      expect(entries.map((entry) => entry.operation).sort()).toEqual(['CREATE', 'DELETE']);
+      const deletion = entries.find((entry) => entry.operation === 'DELETE');
+      expect(deletion?.entityType).toBe('StockLoss');
+      expect(deletion?.changes.reason.old).toBe('BREAKAGE');
+    });
+  });
+
   describe('ENTITY_IN_USE', () => {
     it('counts the losses, and refuses to delete a Material that has any', async () => {
       const { id } = await createMaterial();

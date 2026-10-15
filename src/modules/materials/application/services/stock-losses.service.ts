@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../../shared/domain/persistence/unit-of-work';
-import { MaterialNotFoundError } from '../../domain/material.error';
+import { MaterialNotFoundError, StockLossNotFoundError } from '../../domain/material.error';
 import {
   STOCK_LOSS_DATASET_PORT,
   type StockLossDatasetPort,
@@ -24,13 +24,14 @@ import type {
   StockLossListInput,
   StockLossPageView,
   StockLossResultView,
+  StockLossView,
 } from '../dto/stock-losses.dto';
 import { StockLossViewMapper } from '../mappers/stock-loss-view.mapper';
 
 /**
- * Records the stock a Material lost, and reads the losses back: a paginated
- * list and a dataset by dimension. Totals come from the dataset, never from
- * adding up pages.
+ * Records the stock a Material lost, removes a loss recorded by mistake, and
+ * reads the losses back: a paginated list and a dataset by dimension. Totals
+ * come from the dataset, never from adding up pages.
  */
 @Injectable()
 export class StockLossesService {
@@ -74,6 +75,27 @@ export class StockLossesService {
         ...StockLossViewMapper.toView(loss, material.name),
         stockQuantityAfter: updated.stockQuantity,
       };
+    });
+  }
+
+  /**
+   * Removes a loss recorded by mistake. The stock is NOT touched: the loss
+   * only leaves the list and the totals, and putting the quantity back is the
+   * user's call (a count). Returns what was removed, so the screen can say how
+   * much to put back.
+   */
+  async remove(lossId: string): Promise<StockLossView> {
+    return this.unitOfWork.runInTransaction(async (ctx) => {
+      const loss = await ctx.stockLosses.findById(lossId);
+
+      if (!loss) {
+        throw new StockLossNotFoundError(`StockLoss ${lossId} does not exist.`);
+      }
+
+      const material = await ctx.materials.findById(loss.materialId);
+      await ctx.stockLosses.delete(lossId);
+
+      return StockLossViewMapper.toView(loss, material?.name ?? loss.materialId);
     });
   }
 

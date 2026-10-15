@@ -203,8 +203,9 @@ model StockMovementSnapshot {
 }
 
 // Stock lost: broken, expired, spoiled, missing. One row per loss, never
-// updated or deleted, and permanent (not subject to the AuditLog retention
-// window). The value lost is derived on read from the cost frozen here.
+// updated. The user can delete one recorded by mistake, which does not touch
+// the stock (the deletion stays in the AuditLog). The value lost is derived on
+// read from the cost frozen here.
 enum StockLossReason {
   BREAKAGE
   EXPIRED

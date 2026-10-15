@@ -29,6 +29,7 @@ import type {
   StockLossDatasetView,
   StockLossPageView,
   StockLossResultView,
+  StockLossView,
 } from '../application/dto/stock-losses.dto';
 import { MaterialInventoryService } from '../application/services/material-inventory.service';
 import { MaterialsService } from '../application/services/materials.service';
@@ -107,6 +108,17 @@ export class MaterialsController {
   @Get('losses/dataset')
   getLossesDataset(@Query() query: LossesDatasetQueryDto): Promise<StockLossDatasetView> {
     return this.stockLosses.getDataset({ from: new Date(query.from), to: new Date(query.to) });
+  }
+
+  /**
+   * Removes a loss recorded by mistake and answers with what was removed. The
+   * stock is not changed: the screen tells the user so and how much to put
+   * back. Declared before the `:id` routes.
+   */
+  @Delete('losses/:lossId')
+  @HttpCode(HttpStatus.OK)
+  removeLoss(@Param('lossId') lossId: string): Promise<StockLossView> {
+    return this.stockLosses.remove(lossId);
   }
 
   /**

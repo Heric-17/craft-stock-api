@@ -9,8 +9,17 @@ import type { StockLoss } from '../../domain/stock-loss.entity';
 export class InMemoryStockLossRepository implements StockLossRepository {
   private readonly losses = new Map<string, StockLoss>();
 
+  async findById(id: string): Promise<StockLoss | null> {
+    return Promise.resolve(this.losses.get(id) ?? null);
+  }
+
   async save(loss: StockLoss): Promise<void> {
     this.losses.set(loss.id, loss);
+    return Promise.resolve();
+  }
+
+  async delete(id: string): Promise<void> {
+    this.losses.delete(id);
     return Promise.resolve();
   }
 
