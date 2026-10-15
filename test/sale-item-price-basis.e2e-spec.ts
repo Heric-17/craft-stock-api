@@ -129,6 +129,27 @@ describe('SaleItem price basis (e2e)', () => {
     expect(row.priceBasisQuantity.toNumber()).toBe(1000);
   });
 
+  it('stores the unit the line was sold in, and keeps it when the Material unit changes', async () => {
+    const flour = await seedFlour();
+    const created = await sell(flour.id, 120, 0);
+
+    const row = await prisma.saleItem.findFirstOrThrow({ where: { saleId: created.id } });
+    expect(row.consumptionUnit).toBe('GRAM');
+    expect(created.items[0].consumptionUnit).toBe('GRAM');
+    expect(created.items[0].consumptionUnitSymbol).toBe('g');
+
+    // The unit is only changeable with no stock and no recipe line.
+    await materials.save(
+      flour
+        .withStockQuantity(0, new Date())
+        .changeConsumptionUnit('UNIT', { bomItemReferences: 0 }, new Date()),
+    );
+
+    const reread = await salesService.findById(created.id);
+    expect(reread.items[0].consumptionUnit).toBe('GRAM');
+    expect(reread.items[0].consumptionUnitSymbol).toBe('g');
+  });
+
   it('keeps the stored basis when the quantity of the line changes', async () => {
     const flour = await seedFlour();
     const created = await sell(flour.id, 120, 5000);

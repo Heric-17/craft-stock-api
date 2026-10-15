@@ -43,6 +43,7 @@ async function addSale(repository: InMemorySaleRepository, options: SaleOptions)
           itemNameSnapshot: 'Item',
           priceBasisAmount: Money.fromDecimalString(amount),
           priceBasisQuantity,
+          consumptionUnit: 'GRAM',
         }),
     ),
   );

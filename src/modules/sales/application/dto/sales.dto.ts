@@ -57,6 +57,14 @@ export interface SaleItemView {
   itemNameSnapshot: string;
   priceBasisAmount: string;
   priceBasisQuantity: number;
+  /**
+   * The unit `quantity` and `priceBasisQuantity` are in, as it was when the
+   * line was sold — not the Material's current unit, which may have changed
+   * since. `UNIT` for a CompositeProduct line.
+   */
+  consumptionUnit: ConsumptionUnit;
+  /** How `consumptionUnit` is written: `g`, `ml`, `cm`, `un`. */
+  consumptionUnitSymbol: string;
   unitPrice: string;
   lineTotal: string;
 }

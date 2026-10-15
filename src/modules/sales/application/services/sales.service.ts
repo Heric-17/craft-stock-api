@@ -212,7 +212,8 @@ export class SalesService {
   }
 
   /**
-   * Case 3 + stock debit/reversal. Everything — reading the Sale's current
+   * Case 3 + stock debit/reversal, driven by one rule: PENDING means nothing
+   * is debited, ASSEMBLED and DELIVERED both mean it is. Everything — reading the Sale's current
    * status, debiting or reversing every Material, and saving the new status
    * — runs inside a single `UnitOfWork` transaction, because the debit must
    * see the stock quantities as of right now, not as of an earlier read.
@@ -230,19 +231,22 @@ export class SalesService {
         throw new SaleNotFoundError(`Sale ${saleId} was not found.`);
       }
 
+      // One rule about the axis, not about pairs of states: PENDING means
+      // nothing is debited, any other state means the Sale's need is debited.
+      // So stock moves only when a Sale crosses between PENDING and the rest;
+      // ASSEMBLED <-> DELIVERED touches nothing.
       if (productionStatus !== sale.productionStatus) {
-        if (productionStatus === 'ASSEMBLED') {
-          // Debit happens only the FIRST time this Sale ever reaches
-          // ASSEMBLED. A later re-arrival — a duplicate call, or
-          // DELIVERED -> ASSEMBLED — must not debit stock twice;
-          // `reverseStockDebit` clears the snapshots on the way back to
-          // PENDING, so a genuine new assembly cycle debits again.
+        if (productionStatus === 'PENDING') {
+          // `reverseStockDebit` gives back what the snapshots recorded and
+          // clears them, so an edited Sale debits its new need next time.
+          await this.reverseStockDebit(ctx, saleId, now);
+        } else if (sale.productionStatus === 'PENDING') {
+          // Debit only when no snapshot exists yet, which keeps a repeated
+          // call from debiting twice.
           const existingSnapshots = await ctx.sales.findStockMovementsBySaleId(saleId);
           if (existingSnapshots.length === 0) {
             await this.debitStock(ctx, saleId, now);
           }
-        } else if (sale.productionStatus === 'ASSEMBLED' && productionStatus === 'PENDING') {
-          await this.reverseStockDebit(ctx, saleId, now);
         }
       }
 
@@ -541,6 +545,7 @@ export class SalesService {
           // frozen finalPrice over a quantity of 1.
           priceBasisAmount: finalPriceByCompositeProductId.get(input.compositeProductId) as Money,
           priceBasisQuantity: 1,
+          consumptionUnit: 'UNIT',
         });
       }
 
@@ -560,6 +565,9 @@ export class SalesService {
           input.marginBasisPoints as number,
         ),
         priceBasisQuantity: material.packageQuantity,
+        // Frozen with the price: the Material's unit may be changed later, and
+        // this line must keep reading in the unit it was sold in.
+        consumptionUnit: material.consumptionUnit,
       });
     });
   }

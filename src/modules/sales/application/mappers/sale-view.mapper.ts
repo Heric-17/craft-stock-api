@@ -1,4 +1,5 @@
 import { Money } from '../../../../shared/domain/money/money';
+import { consumptionUnitSymbol } from '../../../materials/domain/consumption-unit';
 import type { Sale } from '../../domain/sale.entity';
 import type { SaleItem } from '../../domain/sale-item.entity';
 import type { SaleItemView, SaleView } from '../dto/sales.dto';
@@ -38,6 +39,8 @@ export class SaleViewMapper {
       itemNameSnapshot: item.itemNameSnapshot,
       priceBasisAmount: item.priceBasisAmount.toDecimalString(),
       priceBasisQuantity: item.priceBasisQuantity,
+      consumptionUnit: item.consumptionUnit,
+      consumptionUnitSymbol: consumptionUnitSymbol(item.consumptionUnit),
       // Four places, display only — the client formats it, and derives no
       // amount of money from it. `lineTotal` is the figure that adds up.
       unitPrice: item.unitPrice,

@@ -1,5 +1,6 @@
 import { formatFractionalAmount } from '../../../shared/domain/money/fractional-amount';
 import type { Money } from '../../../shared/domain/money/money';
+import type { ConsumptionUnit } from '../../materials/domain/consumption-unit';
 import { saleLineTotal } from './sale-line-total';
 import { InvalidSaleError } from './sale.error';
 
@@ -34,6 +35,14 @@ export interface SaleItemProps {
    */
   priceBasisAmount: Money;
   priceBasisQuantity: number;
+  /**
+   * The unit `quantity` and `priceBasisQuantity` are expressed in, frozen with
+   * the price. A loose Material line takes the Material's unit at the time of
+   * sale, a CompositeProduct line is `UNIT`. Reading it from the Material
+   * later would show an old sale in whatever unit the Material has since
+   * been given.
+   */
+  consumptionUnit: ConsumptionUnit;
 }
 
 export class SaleItem {
@@ -45,6 +54,7 @@ export class SaleItem {
   readonly itemNameSnapshot: string;
   readonly priceBasisAmount: Money;
   readonly priceBasisQuantity: number;
+  readonly consumptionUnit: ConsumptionUnit;
 
   constructor(props: SaleItemProps) {
     const referencesProduct = props.compositeProductId !== null;
@@ -82,6 +92,7 @@ export class SaleItem {
     this.itemNameSnapshot = props.itemNameSnapshot;
     this.priceBasisAmount = props.priceBasisAmount;
     this.priceBasisQuantity = props.priceBasisQuantity;
+    this.consumptionUnit = props.consumptionUnit;
   }
 
   /**
@@ -133,6 +144,7 @@ export class SaleItem {
       itemNameSnapshot: this.itemNameSnapshot,
       priceBasisAmount: this.priceBasisAmount,
       priceBasisQuantity: this.priceBasisQuantity,
+      consumptionUnit: this.consumptionUnit,
     };
   }
 }

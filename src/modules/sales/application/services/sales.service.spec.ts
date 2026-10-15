@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { Money } from '../../../../shared/domain/money/money';
 import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistence/in-memory-unit-of-work';
 import type { RepositoryContext } from '../../../../shared/domain/persistence/unit-of-work';
+import { StockMovementSnapshot } from '../../domain/stock-movement-snapshot.entity';
+import type { ProductionStatus } from '../../domain/production-status.enum';
 import { BillOfMaterials } from '../../../composite-products/domain/bill-of-materials.entity';
 import { BomItem } from '../../../composite-products/domain/bom-item.entity';
 import { CompositeProduct } from '../../../composite-products/domain/composite-product.entity';
@@ -249,6 +251,132 @@ describe('SalesService', () => {
       expect(sale.items[0].lineTotal).toBe('10.00');
     });
 
+    it('freezes the Material consumption unit on a loose-Material line, with its symbol', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial({ consumptionUnit: 'GRAM' });
+      const milk = buildMaterial({ name: 'Leite', consumptionUnit: 'MILLILITER' });
+      const ribbon = buildMaterial({ name: 'Fita', consumptionUnit: 'CENTIMETER' });
+      const eggs = buildMaterial({ name: 'Ovo', consumptionUnit: 'UNIT' });
+      for (const material of [flour, milk, ribbon, eggs]) {
+        await materials.save(material);
+      }
+
+      const sale = await service.create(
+        buildCreateInput({
+          items: [flour, milk, ribbon, eggs].map((material) => ({
+            materialId: material.id,
+            quantity: 1,
+            marginBasisPoints: 0,
+          })),
+        }),
+      );
+
+      const unitOf = (materialId: string) => {
+        const line = sale.items.find((item) => item.materialId === materialId)!;
+        return [line.consumptionUnit, line.consumptionUnitSymbol];
+      };
+      expect(unitOf(flour.id)).toEqual(['GRAM', 'g']);
+      expect(unitOf(milk.id)).toEqual(['MILLILITER', 'ml']);
+      expect(unitOf(ribbon.id)).toEqual(['CENTIMETER', 'cm']);
+      expect(unitOf(eggs.id)).toEqual(['UNIT', 'un']);
+    });
+
+    it('freezes UNIT on a CompositeProduct line, whatever unit its materials use', async () => {
+      const { service, materials, compositeProducts } = buildService();
+      const flour = buildMaterial({ consumptionUnit: 'GRAM' });
+      await materials.save(flour);
+      const product = buildCompositeProductWithBom(compositeProducts, flour);
+
+      const sale = await service.create(
+        buildCreateInput({ items: [{ compositeProductId: product.id, quantity: 1 }] }),
+      );
+
+      expect(sale.items[0].consumptionUnit).toBe('UNIT');
+      expect(sale.items[0].consumptionUnitSymbol).toBe('un');
+    });
+
+    it('keeps the unit a line was sold in after the Material unit is changed', async () => {
+      const { service, materials } = buildService();
+      // The unit is only changeable with no stock and no recipe line, which is
+      // exactly the state in which a Material can still have past sales.
+      const flour = buildMaterial({ consumptionUnit: 'GRAM', stockQuantity: 0 });
+      await materials.save(flour);
+      const created = await service.create(
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 120, marginBasisPoints: 0 }],
+        }),
+      );
+
+      await materials.save(
+        flour.changeConsumptionUnit('UNIT', { bomItemReferences: 0 }, new Date()),
+      );
+      expect((await materials.findById(flour.id))?.consumptionUnit).toBe('UNIT');
+
+      const reread = await service.findById(created.id);
+      expect(reread.items[0].consumptionUnit).toBe('GRAM');
+      expect(reread.items[0].consumptionUnitSymbol).toBe('g');
+      expect(reread.items[0].priceBasisQuantity).toBe(1000);
+
+      const listed = await service.list({ limit: 10, offset: 0 });
+      expect(listed.items[0].items[0].consumptionUnit).toBe('GRAM');
+
+      // A line added now is sold in the unit the Material has now, while the
+      // earlier one keeps its own.
+      const withNewLine = await service.addItem(created.id, {
+        materialId: flour.id,
+        quantity: 2,
+        marginBasisPoints: 0,
+      });
+      expect(withNewLine.items.map((item) => item.consumptionUnit).sort()).toEqual([
+        'GRAM',
+        'UNIT',
+      ]);
+    });
+
+    it('carries the unit fields in every response that returns a Sale', async () => {
+      const { service, materials } = buildService();
+      const flour = buildMaterial({ consumptionUnit: 'GRAM' });
+      const sugar = buildMaterial({ name: 'Açúcar', consumptionUnit: 'GRAM' });
+      await materials.save(flour);
+      await materials.save(sugar);
+
+      const created = await service.create(
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: 100, marginBasisPoints: 0 }],
+        }),
+      );
+      const withSugar = await service.addItem(created.id, {
+        materialId: sugar.id,
+        quantity: 50,
+        marginBasisPoints: 0,
+      });
+      const flourLine = withSugar.items.find((item) => item.materialId === flour.id)!;
+      const sugarLine = withSugar.items.find((item) => item.materialId === sugar.id)!;
+
+      const responses = {
+        create: created,
+        addItem: withSugar,
+        updateItemQuantity: await service.updateItemQuantity(created.id, flourLine.id, 200),
+        removeItem: await service.removeItem(created.id, sugarLine.id),
+        updateDetails: await service.updateDetails(created.id, { customerName: 'Joana' }),
+        findById: await service.findById(created.id),
+        list: (await service.list({ limit: 10, offset: 0 })).items[0],
+        paymentStatus: await service.updatePaymentStatus(created.id, 'PAID'),
+        productionStatus: await service.updateProductionStatus(created.id, 'ASSEMBLED'),
+      };
+
+      for (const [name, response] of Object.entries(responses)) {
+        expect(response.items.length).toBeGreaterThan(0);
+        for (const item of response.items) {
+          expect([name, item.consumptionUnit, item.consumptionUnitSymbol]).toEqual([
+            name,
+            'GRAM',
+            'g',
+          ]);
+        }
+      }
+    });
+
     it('rejects an item referencing both a CompositeProduct and a Material', async () => {
       const { service } = buildService();
 
@@ -457,6 +585,147 @@ describe('SalesService', () => {
 
       const updatedFlour = await materials.findById(flour.id);
       expect(updatedFlour?.stockQuantity).toBe(700);
+    });
+  });
+
+  describe('stock follows the production axis, whatever the pair of states', () => {
+    const STATUSES: ProductionStatus[] = ['PENDING', 'ASSEMBLED', 'DELIVERED'];
+
+    /**
+     * A one-line Sale of 300 g out of 1000 g, put straight into `status` with
+     * the stock that status implies: PENDING has debited nothing, any other
+     * status has debited the 300 and holds the snapshot that says so. Seeding
+     * the state instead of walking to it keeps each transition test about that
+     * transition alone.
+     */
+    async function seedSale(status: ProductionStatus, stockQuantity = 1000, need = 300) {
+      const built = buildService();
+      const flour = buildMaterial({ stockQuantity });
+      await built.materials.save(flour);
+      const created = await built.service.create(
+        buildCreateInput({
+          items: [{ materialId: flour.id, quantity: need, marginBasisPoints: 0 }],
+        }),
+      );
+
+      if (status !== 'PENDING') {
+        const debited = Math.min(need, stockQuantity);
+        const sale = (await built.sales.findById(created.id))!;
+        await built.sales.save(sale.withProductionStatus(status, new Date()));
+        await built.materials.save(flour.withStockQuantity(stockQuantity - debited, new Date()));
+        await built.sales.saveStockMovements([
+          new StockMovementSnapshot({
+            id: randomUUID(),
+            saleId: created.id,
+            materialId: flour.id,
+            quantityDebited: debited,
+            createdAt: new Date(),
+          }),
+        ]);
+      }
+
+      return { ...built, flour, saleId: created.id };
+    }
+
+    const transitions = STATUSES.flatMap((from) => STATUSES.map((to) => [from, to] as const));
+
+    it.each(transitions)('%s -> %s leaves stock matching the target state', async (from, to) => {
+      const { service, materials, sales, flour, saleId } = await seedSale(from);
+
+      const updated = await service.updateProductionStatus(saleId, to);
+
+      expect(updated.productionStatus).toBe(to);
+      // PENDING = nothing debited; any other state = the 300 g debited.
+      const expectedStock = to === 'PENDING' ? 1000 : 700;
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(expectedStock);
+      const snapshots = await sales.findStockMovementsBySaleId(saleId);
+      expect(snapshots).toHaveLength(to === 'PENDING' ? 0 : 1);
+      expect(snapshots.reduce((total, s) => total + s.quantityDebited, 0)).toBe(
+        to === 'PENDING' ? 0 : 300,
+      );
+    });
+
+    it('PENDING -> DELIVERED -> PENDING restores the stock', async () => {
+      const { service, materials, flour, saleId } = await seedSale('PENDING');
+
+      await service.updateProductionStatus(saleId, 'DELIVERED');
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(700);
+
+      await service.updateProductionStatus(saleId, 'PENDING');
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(1000);
+    });
+
+    it('PENDING -> DELIVERED -> ASSEMBLED does not debit twice', async () => {
+      const { service, materials, sales, flour, saleId } = await seedSale('PENDING');
+
+      await service.updateProductionStatus(saleId, 'DELIVERED');
+      // Debited on the way to DELIVERED, not late on the way to ASSEMBLED.
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(700);
+
+      await service.updateProductionStatus(saleId, 'ASSEMBLED');
+
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(700);
+      expect(await sales.findStockMovementsBySaleId(saleId)).toHaveLength(1);
+    });
+
+    it('debits the edited need, not the old one, when a Sale returned from DELIVERED is edited and assembled', async () => {
+      const { service, materials, flour, saleId } = await seedSale('DELIVERED');
+
+      await service.updateProductionStatus(saleId, 'PENDING');
+      await service.addItem(saleId, { materialId: flour.id, quantity: 100, marginBasisPoints: 0 });
+      await service.updateProductionStatus(saleId, 'ASSEMBLED');
+
+      // Stock is back to 1000 after the return; the edited Sale needs 300 + 100.
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(600);
+    });
+
+    it('PENDING -> ASSEMBLED -> DELIVERED -> PENDING returns what was debited, once', async () => {
+      const { service, materials, sales, flour, saleId } = await seedSale('PENDING');
+
+      await service.updateProductionStatus(saleId, 'ASSEMBLED');
+      await service.updateProductionStatus(saleId, 'DELIVERED');
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(700);
+
+      await service.updateProductionStatus(saleId, 'PENDING');
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(1000);
+      expect(await sales.findStockMovementsBySaleId(saleId)).toHaveLength(0);
+    });
+
+    it('a second trip through DELIVERED debits again after the return to PENDING', async () => {
+      const { service, materials, flour, saleId } = await seedSale('PENDING');
+
+      await service.updateProductionStatus(saleId, 'DELIVERED');
+      await service.updateProductionStatus(saleId, 'PENDING');
+      await service.updateProductionStatus(saleId, 'DELIVERED');
+
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(700);
+    });
+
+    it('returns only what a partial debit took when leaving DELIVERED for PENDING', async () => {
+      // 100 g in stock for a 300 g need: the debit takes 100 and floors the
+      // Material at zero. The return must give back 100, not 300.
+      const { service, materials, sales, flour, saleId } = await seedSale('PENDING', 100);
+
+      await service.updateProductionStatus(saleId, 'DELIVERED');
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(0);
+      const snapshots = await sales.findStockMovementsBySaleId(saleId);
+      expect(snapshots.map((s) => s.quantityDebited)).toEqual([100]);
+
+      await service.updateProductionStatus(saleId, 'PENDING');
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(100);
+      expect(await sales.findStockMovementsBySaleId(saleId)).toHaveLength(0);
+    });
+
+    it('returns only what a partial debit took across ASSEMBLED and DELIVERED', async () => {
+      const { service, materials, flour, saleId } = await seedSale('PENDING', 100);
+
+      await service.updateProductionStatus(saleId, 'ASSEMBLED');
+      await service.updateProductionStatus(saleId, 'DELIVERED');
+      await service.updateProductionStatus(saleId, 'ASSEMBLED');
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(0);
+
+      await service.updateProductionStatus(saleId, 'PENDING');
+      expect((await materials.findById(flour.id))?.stockQuantity).toBe(100);
     });
   });
 

@@ -183,8 +183,12 @@ model SaleItem {
   // The line total is derived from the pair at read time, never stored.
   priceBasisAmount   Decimal @db.Decimal(12, 2)
   priceBasisQuantity Decimal @db.Decimal(12, 3)
+  // The unit `quantity` and `priceBasisQuantity` are expressed in, frozen with
+  // the price: a Material's unit can change after the sale, and the history
+  // must not be read in the new one. A CompositeProduct is sold by the piece.
+  consumptionUnit    ConsumptionUnit
 
-  sale             Sale              @relation(fields: [saleId], references: [id])
+  sale            Sale              @relation(fields: [saleId], references: [id])
   compositeProduct CompositeProduct? @relation(fields: [compositeProductId], references: [id], onDelete: Restrict)
   material         Material?         @relation(fields: [materialId], references: [id], onDelete: Restrict)
 }

@@ -157,6 +157,7 @@ describe('Sales dataset against the sales as the domain totals them (e2e)', () =
             itemNameSnapshot: 'Item',
             priceBasisAmount: Money.fromDecimalString(amount),
             priceBasisQuantity,
+            consumptionUnit: 'GRAM',
           }),
       ),
     );

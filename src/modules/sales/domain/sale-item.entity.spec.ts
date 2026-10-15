@@ -12,6 +12,7 @@ function buildItem(overrides: Partial<ConstructorParameters<typeof SaleItem>[0]>
     itemNameSnapshot: 'Bolo de cenoura',
     priceBasisAmount: Money.fromDecimalString('19.90'),
     priceBasisQuantity: 1,
+    consumptionUnit: 'UNIT',
     ...overrides,
   });
 }
@@ -27,6 +28,7 @@ function buildLooseFlourItem(
     quantity: 120,
     priceBasisAmount: Money.fromDecimalString('28.00'),
     priceBasisQuantity: 1000,
+    consumptionUnit: 'GRAM',
     ...overrides,
   });
 }
@@ -122,6 +124,11 @@ describe('SaleItem', () => {
       expect(item.itemNameSnapshot).toBe('Bolo de cenoura');
       expect(item.priceBasisAmount.toDecimalString()).toBe('19.90');
       expect(item.priceBasisQuantity).toBe(1);
+      expect(item.consumptionUnit).toBe('UNIT');
+    });
+
+    it('records the unit the quantities are expressed in, for a loose Material line', () => {
+      expect(buildLooseFlourItem().consumptionUnit).toBe('GRAM');
     });
 
     it('is unaffected by the referenced CompositeProduct being renamed and repriced afterwards', () => {
@@ -171,6 +178,7 @@ describe('SaleItem', () => {
       expect(updated.itemNameSnapshot).toBe(item.itemNameSnapshot);
       expect(updated.priceBasisAmount.equals(item.priceBasisAmount)).toBe(true);
       expect(updated.priceBasisQuantity).toBe(item.priceBasisQuantity);
+      expect(updated.consumptionUnit).toBe('GRAM');
       // Only the derived total moves with the quantity.
       expect(updated.lineTotal.toDecimalString()).toBe('7.00');
       expect(item.lineTotal.toDecimalString()).toBe('3.36');
