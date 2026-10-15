@@ -1,4 +1,5 @@
 import type { MaterialRepository } from '../../../modules/materials/domain/repositories/material.repository';
+import type { StockAdjustmentRepository } from '../../../modules/materials/domain/repositories/stock-adjustment.repository';
 import type { CompositeProductRepository } from '../../../modules/composite-products/domain/repositories/composite-product.repository';
 import type { SaleRepository } from '../../../modules/sales/domain/repositories/sale.repository';
 import type { PurchaseRepository } from '../../../modules/purchases/domain/repositories/purchase.repository';
@@ -8,6 +9,7 @@ import type { RefreshTokenRepository } from '../../../modules/auth/domain/reposi
 
 export interface RepositoryContext {
   materials: MaterialRepository;
+  stockAdjustments: StockAdjustmentRepository;
   compositeProducts: CompositeProductRepository;
   sales: SaleRepository;
   purchases: PurchaseRepository;

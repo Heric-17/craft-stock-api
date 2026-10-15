@@ -6,6 +6,7 @@ import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistenc
 import { InMemoryCompositeProductRepository } from '../../../composite-products/infrastructure/persistence/in-memory-composite-product.repository';
 import { Material } from '../../../materials/domain/material.entity';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
+import { InMemoryStockAdjustmentRepository } from '../../../../modules/materials/infrastructure/persistence/in-memory-stock-adjustment.repository';
 import type { DiscountAllocationMode } from '../../../purchases/domain/discount-allocation-mode';
 import { DISCOUNT_ALLOCATION_MODES } from '../../../purchases/domain/discount-allocation-mode';
 import { Purchase } from '../../../purchases/domain/purchase.entity';
@@ -37,6 +38,7 @@ function buildService(): {
     purchases,
     pendingInvoices: new InMemoryPendingInvoiceRepository(),
     users: new InMemoryUserRepository(),
+    stockAdjustments: new InMemoryStockAdjustmentRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
   };
 

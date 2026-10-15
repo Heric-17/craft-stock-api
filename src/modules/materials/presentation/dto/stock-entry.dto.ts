@@ -14,8 +14,10 @@ export class StockEntryDto {
   @IsIn(STOCK_ENTRY_SOURCES)
   source!: StockEntrySource;
 
+  /** Never negative: taking stock out goes through `stock-adjustments`. */
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0)
   relativeIncrement?: number;
 
   @IsOptional()

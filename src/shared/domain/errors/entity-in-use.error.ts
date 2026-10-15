@@ -14,17 +14,25 @@ export interface EntityReferenceCounts {
   bomItems: number;
   purchaseItems: number;
   stockMovements: number;
+  /** Manual stock changes recorded for a Material. */
+  stockAdjustments: number;
 }
 
 export interface EntityInUseDetails extends EntityReferenceCounts {
   entityName: string;
   entityId: string;
-  /** The sum of the four counts above, so the client never has to add them up. */
+  /** The sum of the five counts above, so the client never has to add them up. */
   total: number;
 }
 
 export function totalReferences(counts: EntityReferenceCounts): number {
-  return counts.saleItems + counts.bomItems + counts.purchaseItems + counts.stockMovements;
+  return (
+    counts.saleItems +
+    counts.bomItems +
+    counts.purchaseItems +
+    counts.stockMovements +
+    counts.stockAdjustments
+  );
 }
 
 export class EntityInUseError extends DomainError<EntityInUseDetails> {

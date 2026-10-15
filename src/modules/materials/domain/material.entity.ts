@@ -1,7 +1,11 @@
 import { formatFractionalAmount } from '../../../shared/domain/money/fractional-amount';
 import type { Money } from '../../../shared/domain/money/money';
 import type { ConsumptionUnit } from './consumption-unit';
-import { ConsumptionUnitLockedError, InvalidMaterialError } from './material.error';
+import {
+  ConsumptionUnitLockedError,
+  InsufficientStockError,
+  InvalidMaterialError,
+} from './material.error';
 
 export interface MaterialProps {
   id: string;
@@ -220,6 +224,25 @@ export class Material {
 
   withStockQuantity(newStockQuantity: number, updatedAt: Date): Material {
     return this.update({ stockQuantity: newStockQuantity }, updatedAt);
+  }
+
+  /**
+   * Moves the balance by `delta` (negative takes stock out), refusing to go
+   * below zero. The sum is rounded to three places before the comparison:
+   * 0.3 - 0.1 - 0.2 is -2.7e-17 in floating point, which is an empty shelf,
+   * not a shortage.
+   */
+  applyStockDelta(delta: number, updatedAt: Date): Material {
+    const next = Math.round((this.stockQuantity + delta) * 1_000) / 1_000;
+
+    if (next < 0) {
+      throw new InsufficientStockError(
+        `Material ${this.id} holds ${this.stockQuantity} in stock, measured in ${this.consumptionUnit}, and ${-delta} was asked to be taken out.`,
+        { materialId: this.id, stockQuantity: this.stockQuantity, requestedQuantity: -delta },
+      );
+    }
+
+    return this.withStockQuantity(next, updatedAt);
   }
 
   /**

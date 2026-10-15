@@ -68,14 +68,16 @@ export class PrismaMaterialRepository implements MaterialRepository {
   }
 
   async countReferences(materialId: string): Promise<EntityReferenceCounts> {
-    const [bomItems, saleItems, purchaseItems, stockMovements] = await Promise.all([
-      this.prisma.bomItem.count({ where: { materialId } }),
-      this.prisma.saleItem.count({ where: { materialId } }),
-      this.prisma.purchaseItem.count({ where: { materialId } }),
-      this.prisma.stockMovementSnapshot.count({ where: { materialId } }),
-    ]);
+    const [bomItems, saleItems, purchaseItems, stockMovements, stockAdjustments] =
+      await Promise.all([
+        this.prisma.bomItem.count({ where: { materialId } }),
+        this.prisma.saleItem.count({ where: { materialId } }),
+        this.prisma.purchaseItem.count({ where: { materialId } }),
+        this.prisma.stockMovementSnapshot.count({ where: { materialId } }),
+        this.prisma.stockAdjustment.count({ where: { materialId } }),
+      ]);
 
-    return { bomItems, saleItems, purchaseItems, stockMovements };
+    return { bomItems, saleItems, purchaseItems, stockMovements, stockAdjustments };
   }
 
   async countBomItemReferences(materialId: string): Promise<number> {

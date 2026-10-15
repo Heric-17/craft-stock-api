@@ -72,6 +72,11 @@ export interface UpdateMaterialInput {
  */
 export type StockEntrySource = 'MANUAL' | 'INVOICE_SYNC';
 
+/** A stock entry's result: the Material, and the id of the adjustment it recorded, if it recorded one. */
+export interface StockEntryResultView extends MaterialView {
+  stockAdjustmentId: string | null;
+}
+
 export interface StockEntryInput {
   relativeIncrement?: number;
   absoluteQuantity?: number;

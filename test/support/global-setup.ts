@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 
@@ -8,6 +11,7 @@ declare global {
   // for handing a value from `globalSetup` to the matching `globalTeardown`,
   // the only other file Jest runs in the same process.
   var __CRAFTSTOCK_PG_CONTAINER__: StartedPostgreSqlContainer | undefined;
+  var __CRAFTSTOCK_UPLOADS_DIR__: string | undefined;
 }
 
 /**
@@ -21,8 +25,19 @@ declare global {
  * value, or a developer's own `.env`), and `process.env` set here is what
  * Jest actually propagates to every test file — `globalThis` is not a
  * reliable channel to them, only back to `globalTeardown`.
+ *
+ * Storage gets the same treatment. Images always go to local disk, in a
+ * throwaway directory removed by `globalTeardown`, whatever the developer's
+ * `.env` says: a run must never write to the real `uploads/` folder, and
+ * above all never to a real bucket, where nothing would clean it up.
  */
 export default async function globalSetup(): Promise<void> {
+  const uploadsDir = await mkdtemp(join(tmpdir(), 'craftstock-e2e-uploads-'));
+
+  process.env.STORAGE_PROVIDER = 'LOCAL_DISK';
+  process.env.UPLOADS_DIR = uploadsDir;
+  globalThis.__CRAFTSTOCK_UPLOADS_DIR__ = uploadsDir;
+
   const container = await new PostgreSqlContainer('postgres:18-alpine').start();
 
   process.env.DATABASE_URL = container.getConnectionUri();

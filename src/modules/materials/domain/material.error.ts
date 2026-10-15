@@ -31,3 +31,28 @@ export interface ConsumptionUnitLockedDetails {
  * consumes it.
  */
 export class ConsumptionUnitLockedError extends DomainError<ConsumptionUnitLockedDetails> {}
+
+export interface InsufficientStockDetails {
+  materialId: string;
+  /** What is on hand, in the Material's consumption unit. */
+  stockQuantity: number;
+  /** How much the refused operation would have taken out. */
+  requestedQuantity: number;
+}
+
+/**
+ * Raised when a manual operation would take more out of a `Material` than it
+ * holds. Unlike a sale's debit, which zeroes the balance, a manual loss above
+ * the balance means the user's count is wrong, so it is refused. The balance
+ * travels in `details`.
+ */
+export class InsufficientStockError extends DomainError<InsufficientStockDetails> {}
+
+/** Raised when a `StockAdjustment` breaks the rules of its kind. */
+export class InvalidStockAdjustmentError extends DomainError {}
+
+/** Raised when a use case addresses a `StockAdjustment` that does not exist. */
+export class StockAdjustmentNotFoundError extends DomainError {}
+
+/** Raised when a `StockAdjustment` is reversed a second time. */
+export class StockAdjustmentAlreadyReversedError extends DomainError {}

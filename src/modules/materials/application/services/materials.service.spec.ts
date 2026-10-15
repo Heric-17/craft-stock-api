@@ -15,6 +15,7 @@ import {
   InMemoryStorageProviderFactory,
 } from '../../../../shared/infrastructure/storage/in-memory-storage-provider';
 import { InMemoryMaterialRepository } from '../../infrastructure/persistence/in-memory-material.repository';
+import { InMemoryStockAdjustmentRepository } from '../../infrastructure/persistence/in-memory-stock-adjustment.repository';
 import { EntityInUseError } from '../../../../shared/domain/errors/entity-in-use.error';
 import {
   ConsumptionUnitLockedError,
@@ -52,10 +53,12 @@ function storageKeyOf(imageUrl: string | null): string {
 function buildService(storage: InMemoryStorageProvider = new InMemoryStorageProvider()): {
   service: MaterialsService;
   materials: InMemoryMaterialRepository;
+  stockAdjustments: InMemoryStockAdjustmentRepository;
   storage: InMemoryStorageProvider;
   logger: StructuredLogger;
 } {
   const materials = new InMemoryMaterialRepository();
+  const stockAdjustments = new InMemoryStockAdjustmentRepository();
   const context: RepositoryContext = {
     materials,
     compositeProducts: new InMemoryCompositeProductRepository(),
@@ -63,6 +66,7 @@ function buildService(storage: InMemoryStorageProvider = new InMemoryStorageProv
     purchases: new InMemoryPurchaseRepository(),
     pendingInvoices: new InMemoryPendingInvoiceRepository(),
     users: new InMemoryUserRepository(),
+    stockAdjustments,
     refreshTokens: new InMemoryRefreshTokenRepository(),
   };
   const logger = silentLogger();
@@ -74,6 +78,7 @@ function buildService(storage: InMemoryStorageProvider = new InMemoryStorageProv
       new InMemoryStorageProviderFactory(storage),
       logger,
     ),
+    stockAdjustments,
     materials,
     storage,
     logger,
@@ -283,6 +288,138 @@ describe('MaterialsService', () => {
       });
 
       expect(updated.stockQuantity).toBe(300);
+    });
+
+    describe('the id of the record, for undoing it right away', () => {
+      it('returns the id of the MANUAL_ENTRY it recorded', async () => {
+        const { service, stockAdjustments } = buildService();
+        const created = await service.create(buildCreateInput({ stockQuantity: 100 }));
+
+        const result = await service.registerStockEntry(created.id, {
+          source: 'MANUAL',
+          relativeIncrement: 5,
+        });
+
+        expect(result.stockAdjustmentId).toBe(stockAdjustments.all()[0].id);
+        expect(result.stockQuantity).toBe(105);
+      });
+
+      it('returns the id of the MANUAL_ADJUSTMENT of a count', async () => {
+        const { service, stockAdjustments } = buildService();
+        const created = await service.create(buildCreateInput({ stockQuantity: 100 }));
+
+        const result = await service.registerStockEntry(created.id, {
+          source: 'MANUAL',
+          absoluteQuantity: 60,
+        });
+
+        expect(result.stockAdjustmentId).toBe(stockAdjustments.all()[0].id);
+      });
+
+      it('returns null when nothing was recorded', async () => {
+        const { service } = buildService();
+        const created = await service.create(buildCreateInput({ stockQuantity: 100 }));
+
+        const sameCount = await service.registerStockEntry(created.id, {
+          source: 'MANUAL',
+          absoluteQuantity: 100,
+        });
+        const invoiceSync = await service.registerStockEntry(created.id, {
+          source: 'INVOICE_SYNC',
+          relativeIncrement: 5,
+        });
+
+        expect(sameCount.stockAdjustmentId).toBeNull();
+        expect(invoiceSync.stockAdjustmentId).toBeNull();
+      });
+    });
+
+    it('refuses a negative relativeIncrement: taking stock out carries a reason', async () => {
+      const { service, stockAdjustments } = buildService();
+      const created = await service.create(buildCreateInput({ stockQuantity: 100 }));
+
+      await expect(
+        service.registerStockEntry(created.id, { source: 'MANUAL', relativeIncrement: -10 }),
+      ).rejects.toThrow(InvalidStockEntryError);
+
+      expect((await service.findById(created.id)).stockQuantity).toBe(100);
+      expect(stockAdjustments.all()).toHaveLength(0);
+    });
+
+    describe('the record a manual change leaves behind', () => {
+      it('writes a MANUAL_ENTRY for a typed-in increment, at the cost of the moment', async () => {
+        const { service, stockAdjustments } = buildService();
+        const created = await service.create(
+          buildCreateInput({ stockQuantity: 100, packageCost: '28.00', packageQuantity: 1000 }),
+        );
+
+        await service.registerStockEntry(created.id, { source: 'MANUAL', relativeIncrement: 50 });
+
+        const [record] = stockAdjustments.all();
+        expect(record).toMatchObject({
+          kind: 'MANUAL_ENTRY',
+          materialId: created.id,
+          quantityDelta: 50,
+          reason: null,
+          costBasisQuantity: 1000,
+        });
+        expect(record.costBasisAmount.toDecimalString()).toBe('28.00');
+      });
+
+      it('writes a MANUAL_ADJUSTMENT with the difference of a count that went down', async () => {
+        const { service, stockAdjustments } = buildService();
+        const created = await service.create(buildCreateInput({ stockQuantity: 100 }));
+
+        await service.registerStockEntry(created.id, { source: 'MANUAL', absoluteQuantity: 40 });
+
+        const [record] = stockAdjustments.all();
+        expect(record).toMatchObject({ kind: 'MANUAL_ADJUSTMENT', quantityDelta: -60 });
+      });
+
+      it('writes a MANUAL_ADJUSTMENT with the difference of a count that went up', async () => {
+        const { service, stockAdjustments } = buildService();
+        const created = await service.create(buildCreateInput({ stockQuantity: 100 }));
+
+        await service.registerStockEntry(created.id, { source: 'MANUAL', absoluteQuantity: 130 });
+
+        const [record] = stockAdjustments.all();
+        expect(record).toMatchObject({ kind: 'MANUAL_ADJUSTMENT', quantityDelta: 30 });
+      });
+
+      it('writes nothing for a count that matches the balance', async () => {
+        const { service, stockAdjustments } = buildService();
+        const created = await service.create(buildCreateInput({ stockQuantity: 100 }));
+
+        await service.registerStockEntry(created.id, { source: 'MANUAL', absoluteQuantity: 100 });
+
+        expect(stockAdjustments.all()).toHaveLength(0);
+      });
+
+      it('writes nothing for an invoice sync, whose trail is the purchase', async () => {
+        const { service, stockAdjustments } = buildService();
+        const created = await service.create(buildCreateInput({ stockQuantity: 100 }));
+
+        await service.registerStockEntry(created.id, {
+          source: 'INVOICE_SYNC',
+          relativeIncrement: 25,
+        });
+
+        expect(stockAdjustments.all()).toHaveLength(0);
+      });
+
+      it('applies the adjustment of a count to a discontinued Material as well', async () => {
+        const { service, stockAdjustments } = buildService();
+        const created = await service.create(buildCreateInput({ stockQuantity: 100 }));
+        await service.discontinue(created.id);
+
+        const updated = await service.registerStockEntry(created.id, {
+          source: 'MANUAL',
+          absoluteQuantity: 90,
+        });
+
+        expect(updated.stockQuantity).toBe(90);
+        expect(stockAdjustments.all()).toHaveLength(1);
+      });
     });
 
     it('rejects a command with neither relativeIncrement nor absoluteQuantity', async () => {

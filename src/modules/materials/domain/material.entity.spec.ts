@@ -1,5 +1,9 @@
 import { Money } from '../../../shared/domain/money/money';
-import { ConsumptionUnitLockedError, InvalidMaterialError } from './material.error';
+import {
+  ConsumptionUnitLockedError,
+  InsufficientStockError,
+  InvalidMaterialError,
+} from './material.error';
 import { Material, type MaterialProps } from './material.entity';
 
 function buildProps(overrides: Partial<MaterialProps> = {}): MaterialProps {
@@ -373,6 +377,64 @@ describe('Material', () => {
       const updated = material.update({ consumptionUnit: 'UNIT' }, updatedAt);
 
       expect(updated.consumptionUnit).toBe('GRAM');
+    });
+  });
+
+  describe('applyStockDelta', () => {
+    const at = new Date('2026-02-01T00:00:00Z');
+
+    it('moves the balance by the delta, in either direction', () => {
+      const material = new Material(buildProps({ stockQuantity: 2, consumptionUnit: 'UNIT' }));
+
+      expect(material.applyStockDelta(-1, at).stockQuantity).toBe(1);
+      expect(material.applyStockDelta(3, at).stockQuantity).toBe(5);
+    });
+
+    it('lets the balance reach exactly zero', () => {
+      const material = new Material(buildProps({ stockQuantity: 2, consumptionUnit: 'UNIT' }));
+
+      expect(material.applyStockDelta(-2, at).stockQuantity).toBe(0);
+    });
+
+    it('refuses to take out more than the balance, and says what the balance is', () => {
+      const material = new Material(
+        buildProps({ id: 'wine', stockQuantity: 1, consumptionUnit: 'UNIT' }),
+      );
+
+      let caught: unknown;
+      try {
+        material.applyStockDelta(-5, at);
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(InsufficientStockError);
+      expect((caught as InsufficientStockError).code).toBe('INSUFFICIENT_STOCK');
+      expect((caught as InsufficientStockError).details).toEqual({
+        materialId: 'wine',
+        stockQuantity: 1,
+        requestedQuantity: 5,
+      });
+    });
+
+    it('leaves the Material untouched when it refuses', () => {
+      const material = new Material(buildProps({ stockQuantity: 1, consumptionUnit: 'UNIT' }));
+
+      expect(() => material.applyStockDelta(-5, at)).toThrow(InsufficientStockError);
+      expect(material.stockQuantity).toBe(1);
+    });
+
+    /**
+     * 0.3 - 0.1 - 0.2 is -2.7e-17 in binary floating point. Compared as it
+     * is, the last loss of a shelf would be refused as a shortage of nothing.
+     */
+    it('does not mistake binary fuzz for a shortage', () => {
+      const material = new Material(buildProps({ stockQuantity: 0.3, consumptionUnit: 'GRAM' }));
+
+      const afterFirst = material.applyStockDelta(-0.1, at);
+      const afterSecond = afterFirst.applyStockDelta(-0.2, at);
+
+      expect(afterSecond.stockQuantity).toBe(0);
     });
   });
 });

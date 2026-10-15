@@ -8,6 +8,7 @@ const NO_REFERENCES: EntityReferenceCounts = {
   bomItems: 0,
   purchaseItems: 0,
   stockMovements: 0,
+  stockAdjustments: 0,
 };
 
 /** In-memory `CompositeProductRepository` for `application/` tests. Never mocks Prisma. */

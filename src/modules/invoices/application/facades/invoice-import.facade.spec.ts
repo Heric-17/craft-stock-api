@@ -9,6 +9,7 @@ import { RequestContextService } from '../../../../shared/infrastructure/logging
 import { StructuredLogger } from '../../../../shared/infrastructure/logging/structured-logger.service';
 import { InMemoryCompositeProductRepository } from '../../../composite-products/infrastructure/persistence/in-memory-composite-product.repository';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
+import { InMemoryStockAdjustmentRepository } from '../../../../modules/materials/infrastructure/persistence/in-memory-stock-adjustment.repository';
 import { InMemoryPurchaseRepository } from '../../../purchases/infrastructure/persistence/in-memory-purchase.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
 import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
@@ -111,6 +112,7 @@ function buildFacade(
     purchases,
     pendingInvoices,
     users: new InMemoryUserRepository(),
+    stockAdjustments: new InMemoryStockAdjustmentRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
   };
 

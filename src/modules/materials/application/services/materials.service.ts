@@ -23,6 +23,7 @@ import type { ConsumptionUnit } from '../../domain/consumption-unit';
 import { Material } from '../../domain/material.entity';
 import { MaterialPriceHistory } from '../../domain/material-price-history.entity';
 import { InvalidStockEntryError, MaterialNotFoundError } from '../../domain/material.error';
+import { StockAdjustment } from '../../domain/stock-adjustment.entity';
 import {
   MATERIAL_REPOSITORY,
   type MaterialRepository,
@@ -32,6 +33,7 @@ import type {
   MaterialPriceHistoryView,
   MaterialView,
   StockEntryInput,
+  StockEntryResultView,
   UpdateMaterialInput,
 } from '../dto/materials.dto';
 import { MaterialViewMapper } from '../mappers/material-view.mapper';
@@ -196,7 +198,10 @@ export class MaterialsService {
       .map((material) => MaterialViewMapper.toView(material, this.resolveImageUrl));
   }
 
-  async registerStockEntry(materialId: string, input: StockEntryInput): Promise<MaterialView> {
+  async registerStockEntry(
+    materialId: string,
+    input: StockEntryInput,
+  ): Promise<StockEntryResultView> {
     const now = new Date();
     const current = await this.findByIdOrThrow(materialId);
     const newStockQuantity = this.resolveNewStockQuantity(current.stockQuantity, input);
@@ -210,8 +215,14 @@ export class MaterialsService {
       priceChanged = !updated.packageCost.equals(current.packageCost);
     }
 
+    const manualRecord = this.manualStockRecord(current, input, newStockQuantity, now);
+
     await this.unitOfWork.runInTransaction(async (ctx) => {
       await ctx.materials.save(updated);
+
+      if (manualRecord !== null) {
+        await ctx.stockAdjustments.save(manualRecord);
+      }
 
       if (priceChanged) {
         await ctx.materials.addPriceHistoryEntry(
@@ -227,7 +238,10 @@ export class MaterialsService {
       }
     });
 
-    return MaterialViewMapper.toView(updated, this.resolveImageUrl);
+    return {
+      ...MaterialViewMapper.toView(updated, this.resolveImageUrl),
+      stockAdjustmentId: manualRecord?.id ?? null,
+    };
   }
 
   /**
@@ -319,6 +333,42 @@ export class MaterialsService {
     return MaterialViewMapper.toView(updated, this.resolveImageUrl);
   }
 
+  /**
+   * The record a manual change leaves behind, or null when there is none to
+   * leave: an invoice sync has its purchase as the trail, and a count equal to
+   * the balance changed nothing. A count (`absoluteQuantity`) is a
+   * `MANUAL_ADJUSTMENT` in either direction, an increment a `MANUAL_ENTRY`.
+   */
+  private manualStockRecord(
+    current: Material,
+    input: StockEntryInput,
+    newStockQuantity: number,
+    at: Date,
+  ): StockAdjustment | null {
+    if (input.source !== 'MANUAL') {
+      return null;
+    }
+
+    const delta = Math.round((newStockQuantity - current.stockQuantity) * 1_000) / 1_000;
+
+    if (delta === 0) {
+      return null;
+    }
+
+    return new StockAdjustment({
+      id: randomUUID(),
+      materialId: current.id,
+      kind: input.absoluteQuantity !== undefined ? 'MANUAL_ADJUSTMENT' : 'MANUAL_ENTRY',
+      quantityDelta: delta,
+      reason: null,
+      observation: null,
+      costBasisAmount: current.packageCost,
+      costBasisQuantity: current.packageQuantity,
+      reversedAdjustmentId: null,
+      createdAt: at,
+    });
+  }
+
   private resolveNewStockQuantity(currentQuantity: number, input: StockEntryInput): number {
     const { relativeIncrement, absoluteQuantity } = input;
 
@@ -327,7 +377,13 @@ export class MaterialsService {
     }
 
     if (relativeIncrement !== undefined && absoluteQuantity === undefined) {
-      return currentQuantity + relativeIncrement;
+      if (relativeIncrement < 0) {
+        throw new InvalidStockEntryError(
+          'A stock entry cannot take stock out. Record a loss with its reason as a stock adjustment.',
+        );
+      }
+
+      return Math.round((currentQuantity + relativeIncrement) * 1_000) / 1_000;
     }
 
     throw new InvalidStockEntryError(
