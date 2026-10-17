@@ -256,8 +256,8 @@ nenhuma linha de log de inicialização da API.
 
 **Se a migration tiver sucesso e o processo Node falhar ao iniciar depois** (bug na
 aplicação, variável de ambiente ausente etc.): o esquema já avançou, mas a nova versão
-do código não chegou a assumir tráfego. Como esta instalação é de contêiner único (seção
-1 do CLAUDE.md — sem réplicas), o resultado é indisponibilidade até a causa ser
+do código não chegou a assumir tráfego. Como cada instalação atende a uma única empresa
+e roda em contêiner único, sem réplicas, o resultado é indisponibilidade até a causa ser
 corrigida e uma imagem que funcione subir no lugar; não existe "voltar" o código sem
 antes avaliar se o esquema já aplicado é compatível com a versão anterior (ver
 Reversão, abaixo). Por isso toda migration deste projeto deve, quando possível, ser
