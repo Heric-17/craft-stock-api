@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { DEVELOPMENT_CORS_ORIGINS } from '../src/shared/presentation/http/cors-origins';
 import { CORRELATION_ID_HEADER } from '../src/shared/presentation/middleware/request-context.middleware';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 /**
  * Before this, nothing in the application called `enableCors`, so no browser
@@ -45,7 +46,7 @@ describe('CORS (e2e)', () => {
     // Deliberately not `async`: hands back the supertest chain so each test
     // can append its own expectations.
     function preflight(origin: string, method = 'POST'): request.Test {
-      return request(server)
+      return api(server)
         .options('/auth/login')
         .set('Origin', origin)
         .set('Access-Control-Request-Method', method);
@@ -100,7 +101,7 @@ describe('CORS (e2e)', () => {
 
     it('accepts every method the SPA uses on business routes', async () => {
       for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
-        const response = await request(server)
+        const response = await api(server)
           .options('/materials')
           .set('Origin', allowedOrigin)
           .set('Access-Control-Request-Method', method);
@@ -112,7 +113,7 @@ describe('CORS (e2e)', () => {
 
   describe('preflight from an unknown origin', () => {
     it('does not grant the origin', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .options('/auth/login')
         .set('Origin', unknownOrigin)
         .set('Access-Control-Request-Method', 'POST');
@@ -133,7 +134,7 @@ describe('CORS (e2e)', () => {
      * the wrong reason and then never fail.
      */
     it('grants no origin, which is what makes the credentials header harmless', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .options('/auth/login')
         .set('Origin', unknownOrigin)
         .set('Access-Control-Request-Method', 'POST');
@@ -148,7 +149,7 @@ describe('CORS (e2e)', () => {
      * too, not only the preflight.
      */
     it('leaves the actual request unendorsed as well', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/login')
         .set('Origin', unknownOrigin)
         .send({ email: 'nobody@craftstock.dev', password: 'whatever' });

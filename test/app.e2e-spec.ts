@@ -7,6 +7,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { CORRELATION_ID_HEADER } from '../src/shared/presentation/middleware/request-context.middleware';
 import { configureTestApp } from './support/configure-test-app';
+import { api, apiRoute } from './support/api';
 
 interface HealthBody {
   status: string;
@@ -67,11 +68,37 @@ describe('Application (e2e)', () => {
   });
 
   it('renders unknown routes through the global exception filter', async () => {
-    const response = await request(server).get('/does-not-exist').expect(HttpStatus.NOT_FOUND);
+    const response = await api(server).get('/does-not-exist').expect(HttpStatus.NOT_FOUND);
     const body = response.body as ErrorBody;
 
     expect(body.statusCode).toBe(HttpStatus.NOT_FOUND);
-    expect(body.path).toBe('/does-not-exist');
+    expect(body.path).toBe(apiRoute('/does-not-exist'));
     expect(body.correlationId).toEqual(expect.any(String));
+  });
+
+  /**
+   * The web app reaches the API through a rewrite of `/api/*` on its own host,
+   * and the platform's health check calls `/health`. Both sides of that are
+   * pinned here: a business route answers only under the prefix, and the probe
+   * only outside it.
+   */
+  describe('route prefix', () => {
+    it('serves business routes under the prefix', async () => {
+      // 401, not 404: the route exists and the guard is what answered.
+      await api(server).get('/materials').expect(HttpStatus.UNAUTHORIZED);
+    });
+
+    /**
+     * Still a 404 in the usual shape, but without a correlation id: the request
+     * context middleware is mounted under the prefix (and on the probe), so a
+     * path that is not the API's carries none.
+     */
+    it('does not serve business routes at the root', async () => {
+      await request(server).get('/materials').expect(HttpStatus.NOT_FOUND);
+    });
+
+    it('keeps the health check outside the prefix', async () => {
+      await api(server).get('/health').expect(HttpStatus.NOT_FOUND);
+    });
   });
 });

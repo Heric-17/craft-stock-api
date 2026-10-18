@@ -3,7 +3,6 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { Material } from '../src/modules/materials/domain/material.entity';
@@ -26,6 +25,7 @@ import { Money } from '../src/shared/domain/money/money';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 /**
  * Real-Postgres proof that the sales dataset adds up to exactly what the detail
@@ -507,7 +507,7 @@ describe('Sales dataset against the sales as the domain totals them (e2e)', () =
 
   describe('over HTTP', () => {
     it('GET /sales/analytics returns the dataset by dimension', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .get('/sales/analytics')
         .query({ from: '2043-01-01T03:00:00.000Z', to: '2043-02-01T03:00:00.000Z' })
         .set('Authorization', authHeader)
@@ -521,7 +521,7 @@ describe('Sales dataset against the sales as the domain totals them (e2e)', () =
     });
 
     it('GET /sales/analytics refuses a request without the whole period', async () => {
-      await request(server)
+      await api(server)
         .get('/sales/analytics')
         .query({ from: '2043-01-01T03:00:00.000Z' })
         .set('Authorization', authHeader)

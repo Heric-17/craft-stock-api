@@ -3,7 +3,6 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import type {
@@ -20,6 +19,7 @@ import { Money } from '../src/shared/domain/money/money';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 /**
  * Real-Postgres coverage for the inventory summary. The table may hold other
@@ -150,7 +150,7 @@ describe('Material inventory summary (e2e)', () => {
       stockQuantity: 120,
     });
 
-    const summary = await request(server)
+    const summary = await api(server)
       .get('/materials/inventory-summary')
       .set('Authorization', authHeader)
       .expect(HttpStatus.OK);
@@ -161,7 +161,7 @@ describe('Material inventory summary (e2e)', () => {
     );
     expect(body.totalStockValue).toMatch(/^\d+\.\d{2}$/);
 
-    const detail = await request(server)
+    const detail = await api(server)
       .get(`/materials/${material.id}`)
       .set('Authorization', authHeader)
       .expect(HttpStatus.OK);
@@ -171,7 +171,7 @@ describe('Material inventory summary (e2e)', () => {
   });
 
   it('refuses a malformed includeDiscontinued', async () => {
-    await request(server)
+    await api(server)
       .get('/materials/inventory-summary')
       .query({ includeDiscontinued: 'maybe' })
       .set('Authorization', authHeader)

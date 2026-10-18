@@ -18,6 +18,7 @@ import type { ErrorResponseBody } from '../src/shared/presentation/filters/all-e
 import { CORRELATION_ID_HEADER } from '../src/shared/presentation/middleware/request-context.middleware';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api, apiRoute } from './support/api';
 
 /**
  * A password, a CPF and a token, all planted in the text of a failure on
@@ -231,7 +232,7 @@ describe('Request failure records (e2e)', () => {
   }
 
   function post(path: string, correlationId: string): request.Test {
-    return request(server)
+    return api(server)
       .post(path)
       .set('Authorization', authHeader)
       .set(CORRELATION_ID_HEADER, correlationId);
@@ -281,7 +282,7 @@ describe('Request failure records (e2e)', () => {
       const row = await waitForRequestLog(correlationId);
 
       expect(row).toMatchObject({
-        route: '/__test-observability/rollback/:materialId',
+        route: apiRoute('/__test-observability/rollback/:materialId'),
         httpMethod: 'POST',
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         errorType: 'RollbackTestError',
@@ -491,7 +492,7 @@ describe('Request failure records (e2e)', () => {
       );
       await waitForRequestLog(correlationId);
 
-      const response = await request(server)
+      const response = await api(server)
         .get('/audit-log/investigate')
         .query({ errorId: correlationId })
         .set('Authorization', authHeader)
@@ -518,7 +519,7 @@ describe('Request failure records (e2e)', () => {
     });
 
     it('answers with an empty investigation for an unknown errorId', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .get('/audit-log/investigate')
         .query({ errorId: randomUUID() })
         .set('Authorization', authHeader)

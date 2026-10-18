@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
+import type request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import type { CompositeProductView } from '../src/modules/composite-products/application/dto/composite-products.dto';
@@ -16,6 +16,7 @@ import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.servic
 import type { ErrorResponseBody } from '../src/shared/presentation/filters/all-exceptions.filter';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 interface ValidationFieldError {
   path: string;
@@ -47,7 +48,7 @@ describe('Error contract (e2e)', () => {
   const createdPurchaseIds: string[] = [];
 
   async function createMaterial(overrides: Record<string, unknown> = {}): Promise<MaterialView> {
-    const response = await request(server)
+    const response = await api(server)
       .post('/materials')
       .set('Authorization', authHeader)
       .send({
@@ -69,7 +70,7 @@ describe('Error contract (e2e)', () => {
   }
 
   async function createProductUsing(materialId: string): Promise<CompositeProductView> {
-    const response = await request(server)
+    const response = await api(server)
       .post('/composite-products')
       .set('Authorization', authHeader)
       .send({
@@ -140,7 +141,7 @@ describe('Error contract (e2e)', () => {
 
   describe('every error response', () => {
     function getMissingMaterial(): request.Test {
-      return request(server).get(`/materials/${randomUUID()}`).set('Authorization', authHeader);
+      return api(server).get(`/materials/${randomUUID()}`).set('Authorization', authHeader);
     }
 
     it('carries a SCREAMING_SNAKE_CASE code', async () => {
@@ -160,14 +161,14 @@ describe('Error contract (e2e)', () => {
     });
 
     it('codes an unmatched route from the status', async () => {
-      const response = await request(server).get('/does-not-exist');
+      const response = await api(server).get('/does-not-exist');
 
       expect(response.status).toBe(HttpStatus.NOT_FOUND);
       expect(errorOf(response).code).toBe('NOT_FOUND');
     });
 
     it('codes a missing bearer token as UNAUTHORIZED', async () => {
-      const response = await request(server).get('/materials');
+      const response = await api(server).get('/materials');
 
       expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
       expect(errorOf(response).code).toBe('UNAUTHORIZED');
@@ -176,7 +177,7 @@ describe('Error contract (e2e)', () => {
 
   describe('VALIDATION_FAILED', () => {
     it('reports the DTO field path of each violation', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .post('/materials')
         .set('Authorization', authHeader)
         .send({
@@ -205,7 +206,7 @@ describe('Error contract (e2e)', () => {
      * cannot mark the field the user has to fix.
      */
     it('indexes into a nested array to name the offending field', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .post('/composite-products')
         .set('Authorization', authHeader)
         .send({
@@ -223,7 +224,7 @@ describe('Error contract (e2e)', () => {
     });
 
     it('names an unknown property rather than dropping it silently', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .post('/materials')
         .set('Authorization', authHeader)
         .send({
@@ -247,7 +248,7 @@ describe('Error contract (e2e)', () => {
       const material = await createMaterial();
       await createProductUsing(material.id);
 
-      const response = await request(server)
+      const response = await api(server)
         .delete(`/materials/${material.id}`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -275,7 +276,7 @@ describe('Error contract (e2e)', () => {
       const material = await createMaterial();
       const product = await createProductUsing(material.id);
 
-      await request(server)
+      await api(server)
         .delete(`/composite-products/${product.id}`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.NO_CONTENT);
@@ -288,7 +289,7 @@ describe('Error contract (e2e)', () => {
     it('reports stock on hand as the reason', async () => {
       const material = await createMaterial({ stockQuantity: 500 });
 
-      const response = await request(server)
+      const response = await api(server)
         .patch(`/materials/${material.id}/consumption-unit`)
         .set('Authorization', authHeader)
         .send({ consumptionUnit: 'UNIT' })
@@ -308,7 +309,7 @@ describe('Error contract (e2e)', () => {
       const material = await createMaterial({ stockQuantity: 0 });
       await createProductUsing(material.id);
 
-      const response = await request(server)
+      const response = await api(server)
         .patch(`/materials/${material.id}/consumption-unit`)
         .set('Authorization', authHeader)
         .send({ consumptionUnit: 'UNIT' })
@@ -325,7 +326,7 @@ describe('Error contract (e2e)', () => {
 
   describe('discount allocation', () => {
     async function purchaseWithDiscount(): Promise<PurchaseView> {
-      const response = await request(server)
+      const response = await api(server)
         .post('/purchases')
         .set('Authorization', authHeader)
         .send({
@@ -359,7 +360,7 @@ describe('Error contract (e2e)', () => {
     it('reports a manual sum that does not close, with both figures as decimal strings', async () => {
       const purchase = await purchaseWithDiscount();
 
-      const response = await request(server)
+      const response = await api(server)
         .patch(`/purchases/${purchase.id}/discount-allocation`)
         .set('Authorization', authHeader)
         .send({
@@ -383,7 +384,7 @@ describe('Error contract (e2e)', () => {
     it('reports which line was given more discount than it is worth', async () => {
       // A discount bigger than the smaller line, so putting it all there
       // breaks the per-line ceiling.
-      const response = await request(server)
+      const response = await api(server)
         .post('/purchases')
         .set('Authorization', authHeader)
         .send({
@@ -411,7 +412,7 @@ describe('Error contract (e2e)', () => {
       const purchase = response.body as PurchaseView;
       createdPurchaseIds.push(purchase.id);
 
-      const refused = await request(server)
+      const refused = await api(server)
         .patch(`/purchases/${purchase.id}/discount-allocation`)
         .set('Authorization', authHeader)
         .send({
@@ -436,7 +437,7 @@ describe('Error contract (e2e)', () => {
     it('reports a pending manual attribution with the expected and current sums', async () => {
       const purchase = await purchaseWithDiscount();
 
-      await request(server)
+      await api(server)
         .patch(`/purchases/${purchase.id}/discount-allocation`)
         .set('Authorization', authHeader)
         .send({
@@ -448,14 +449,14 @@ describe('Error contract (e2e)', () => {
         })
         .expect(HttpStatus.OK);
 
-      const pending = await request(server)
+      const pending = await api(server)
         .delete(`/purchases/${purchase.id}/items/${purchase.items[0].id}`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.OK);
 
       expect((pending.body as PurchaseDetailView).allocationPending).toBe(true);
 
-      const response = await request(server)
+      const response = await api(server)
         .post(`/purchases/${purchase.id}/complete-edit`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -472,7 +473,7 @@ describe('Error contract (e2e)', () => {
     it('reports a mode with no eligible line, naming the mode', async () => {
       const purchase = await purchaseWithDiscount();
 
-      const response = await request(server)
+      const response = await api(server)
         .patch(`/purchases/${purchase.id}/discount-allocation`)
         .set('Authorization', authHeader)
         .send({ mode: 'PERSONAL_ONLY' })
@@ -490,7 +491,7 @@ describe('Error contract (e2e)', () => {
     it('never puts a JSON number where money belongs in details', async () => {
       const purchase = await purchaseWithDiscount();
 
-      const response = await request(server)
+      const response = await api(server)
         .patch(`/purchases/${purchase.id}/discount-allocation`)
         .set('Authorization', authHeader)
         .send({
@@ -510,7 +511,7 @@ describe('Error contract (e2e)', () => {
 
   describe('INVALID_REFRESH_TOKEN', () => {
     it('is the code for a refresh with no cookie', async () => {
-      const response = await request(server).post('/auth/refresh').expect(HttpStatus.UNAUTHORIZED);
+      const response = await api(server).post('/auth/refresh').expect(HttpStatus.UNAUTHORIZED);
 
       expect(errorOf(response).code).toBe('INVALID_REFRESH_TOKEN');
     });
@@ -518,7 +519,7 @@ describe('Error contract (e2e)', () => {
 
   describe('INVALID_CREDENTIALS', () => {
     it('is the code for a wrong password, and says nothing more', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/login')
         .send({ email: `nobody-${randomUUID()}@craftstock.dev`, password: 'wrong password' })
         .expect(HttpStatus.UNAUTHORIZED);

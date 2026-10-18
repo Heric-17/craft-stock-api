@@ -3,13 +3,13 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import type { SalePageView, SaleView } from '../src/modules/sales/application/dto/sales.dto';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 /**
  * `GET /sales`, paged, against a real database. The sales are written straight
@@ -66,7 +66,7 @@ describe('GET /sales pagination (e2e)', () => {
   });
 
   async function getPage(query: Record<string, string | number>): Promise<SalePageView> {
-    const response = await request(server)
+    const response = await api(server)
       .get('/sales')
       .set('Authorization', authHeader)
       .query(query)
@@ -155,7 +155,7 @@ describe('GET /sales pagination (e2e)', () => {
   });
 
   it('refuses a limit above the ceiling, as /purchases does', async () => {
-    await request(server)
+    await api(server)
       .get('/sales')
       .set('Authorization', authHeader)
       .query({ limit: 101 })
@@ -163,12 +163,12 @@ describe('GET /sales pagination (e2e)', () => {
   });
 
   it('refuses a limit of zero and a negative offset', async () => {
-    await request(server)
+    await api(server)
       .get('/sales')
       .set('Authorization', authHeader)
       .query({ limit: 0 })
       .expect(HttpStatus.BAD_REQUEST);
-    await request(server)
+    await api(server)
       .get('/sales')
       .set('Authorization', authHeader)
       .query({ offset: -1 })
@@ -182,7 +182,7 @@ describe('GET /sales pagination (e2e)', () => {
   });
 
   it('leaves the analytics dataset alone: it still counts every sale of the period, not a page', async () => {
-    const response = await request(server)
+    const response = await api(server)
       .get('/sales/analytics')
       .set('Authorization', authHeader)
       .query({ from: '2099-01-01T00:00:00.000Z', to: '2099-02-01T00:00:00.000Z' })

@@ -3,7 +3,6 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { Material } from '../src/modules/materials/domain/material.entity';
@@ -17,6 +16,7 @@ import { Money } from '../src/shared/domain/money/money';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 /** The shopping list with the purchase estimate, read back through the real repositories. */
 describe('Shopping list estimate (e2e)', () => {
@@ -102,7 +102,7 @@ describe('Shopping list estimate (e2e)', () => {
       { materialId: sugar.id, quantity: 900 },
     ]);
 
-    const response = await request(server)
+    const response = await api(server)
       .post('/sales/shopping-list')
       .set('Authorization', authHeader)
       .send({ saleIds: [saleId] })
@@ -129,7 +129,7 @@ describe('Shopping list estimate (e2e)', () => {
       { materialId: flour.id, quantity: 100 },
     ]);
 
-    const response = await request(server)
+    const response = await api(server)
       .post('/sales/shopping-list')
       .set('Authorization', authHeader)
       .send({ saleIds: [saleId] })

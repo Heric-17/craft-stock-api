@@ -2,7 +2,6 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import type { SessionResponse } from '../src/modules/auth/application/dto/auth.dto';
@@ -12,6 +11,7 @@ import { UsersService } from '../src/modules/users/application/services/users.se
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api, apiRoute } from './support/api';
 
 /**
  * End-to-end coverage of §15.2's automatic audit capture, driven over real
@@ -64,7 +64,7 @@ describe('Audit trail (e2e)', () => {
   });
 
   async function createMaterial(overrides: Record<string, unknown> = {}): Promise<MaterialView> {
-    const created = await request(server)
+    const created = await api(server)
       .post('/materials')
       .set('Authorization', authHeader)
       .send({
@@ -95,7 +95,7 @@ describe('Audit trail (e2e)', () => {
     expect(row.entityLabel).toBe(material.name);
     expect(row.userId).toBe(actorUserId);
     expect(row.httpMethod).toBe('POST');
-    expect(row.route).toBe('/materials');
+    expect(row.route).toBe(apiRoute('/materials'));
     const changes = row.changes as Record<string, { old: unknown; new: unknown }>;
     expect(changes.name).toEqual({ old: null, new: material.name });
 
@@ -103,7 +103,7 @@ describe('Audit trail (e2e)', () => {
       where: { transactionId: row.transactionId },
     });
     expect(requestLog).toMatchObject({
-      route: '/materials',
+      route: apiRoute('/materials'),
       httpMethod: 'POST',
       userId: actorUserId,
       statusCode: HttpStatus.CREATED,
@@ -115,7 +115,7 @@ describe('Audit trail (e2e)', () => {
   it('audits an UPDATE with only the changed field, and a no-op PATCH writes nothing', async () => {
     const material = await createMaterial({ description: 'original description' });
 
-    await request(server)
+    await api(server)
       .patch(`/materials/${material.id}`)
       .set('Authorization', authHeader)
       .send({ description: 'updated description' })
@@ -133,7 +133,7 @@ describe('Audit trail (e2e)', () => {
     expect(changes).not.toHaveProperty('packageCost');
 
     // Same value sent again: the diff is empty, so no second UPDATE row.
-    await request(server)
+    await api(server)
       .patch(`/materials/${material.id}`)
       .set('Authorization', authHeader)
       .send({ description: 'updated description' })
@@ -151,7 +151,7 @@ describe('Audit trail (e2e)', () => {
     const user = await app.get(UsersService).register({ email, password, name: 'Audit E2E User' });
     createdUserIds.push(user.id);
 
-    const loginResponse = await request(server)
+    const loginResponse = await api(server)
       .post('/auth/login')
       .send({ email, password })
       .expect(HttpStatus.OK);
@@ -180,7 +180,7 @@ describe('Audit trail (e2e)', () => {
   it('shares one transactionId across every write a multi-write request makes', async () => {
     const material = await createMaterial({ stockQuantity: 1000 });
 
-    const saleCreated = await request(server)
+    const saleCreated = await api(server)
       .post('/sales')
       .set('Authorization', authHeader)
       .send({
@@ -193,7 +193,7 @@ describe('Audit trail (e2e)', () => {
     const sale = saleCreated.body as SaleView;
     createdSaleIds.push(sale.id);
 
-    const assembled = await request(server)
+    const assembled = await api(server)
       .patch(`/sales/${sale.id}/production-status`)
       .set('Authorization', authHeader)
       .send({ productionStatus: 'ASSEMBLED' })
@@ -202,7 +202,7 @@ describe('Audit trail (e2e)', () => {
     void assembled;
 
     const requestLog = await prisma.requestLog.findFirst({
-      where: { route: '/sales/:id/production-status', httpMethod: 'PATCH' },
+      where: { route: apiRoute('/sales/:id/production-status'), httpMethod: 'PATCH' },
       orderBy: { occurredAt: 'desc' },
     });
     expect(requestLog).not.toBeNull();
@@ -223,13 +223,13 @@ describe('Audit trail (e2e)', () => {
       where: { entityType: 'Material', entityId: material.id, operation: 'CREATE' },
     });
 
-    const byTransactionId = await request(server)
+    const byTransactionId = await api(server)
       .get('/audit-log/investigate')
       .set('Authorization', authHeader)
       .query({ transactionId: auditRow.transactionId })
       .expect(HttpStatus.OK);
 
-    const byCorrelationId = await request(server)
+    const byCorrelationId = await api(server)
       .get('/audit-log/investigate')
       .set('Authorization', authHeader)
       .query({ correlationId: auditRow.correlationId })
@@ -250,7 +250,7 @@ describe('Audit trail (e2e)', () => {
   });
 
   it('rejects an investigation with no key at all', async () => {
-    await request(server)
+    await api(server)
       .get('/audit-log/investigate')
       .set('Authorization', authHeader)
       .expect(HttpStatus.BAD_REQUEST);

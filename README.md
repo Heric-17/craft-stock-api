@@ -29,9 +29,14 @@ curl -i http://localhost:3000/health
 
 ## Autenticação
 
-Toda rota é protegida por padrão, exceto `POST /auth/login`, `POST /auth/refresh`,
-`POST /auth/logout` e `GET /health`. Não há cadastro público: qualquer usuário
-autenticado cria outro (`POST /users`); a primeira conta vem do seed.
+Toda rota de negócio fica sob o prefixo **`/api`** (`POST /api/auth/login`,
+`GET /api/materials`). Ficam fora dele só `GET /health` e as imagens em disco local
+(`/uploads/...`).
+
+Toda rota é protegida por padrão, exceto `POST /api/auth/login`, `POST /api/auth/refresh`,
+`POST /api/auth/logout`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` e
+`GET /health`. Não há cadastro público: qualquer usuário autenticado cria outro
+(`POST /api/users`); a primeira conta vem do seed.
 
 | Campo | Valor |
 | --- | --- |
@@ -39,7 +44,7 @@ autenticado cria outro (`POST /users`); a primeira conta vem do seed.
 | Senha | `senha-forte-123` |
 
 ```bash
-curl -X POST http://localhost:3000/auth/login \
+curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@craftstock.dev","password":"senha-forte-123"}'
 ```
@@ -51,21 +56,21 @@ rotacionado a cada `POST /auth/refresh`. Por isso o `curl` acima precisa de `-c`
 guardar o cookie se você quiser testar o refresh na mão:
 
 ```bash
-curl -c cookies.txt -X POST http://localhost:3000/auth/login \
+curl -c cookies.txt -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@craftstock.dev","password":"senha-forte-123"}'
 
-curl -b cookies.txt -c cookies.txt -X POST http://localhost:3000/auth/refresh
+curl -b cookies.txt -c cookies.txt -X POST http://localhost:3000/api/auth/refresh
 ```
 
 Rotas de negócio continuam usando o access token, e **não dependem de cookie**:
 
 ```bash
-curl http://localhost:3000/materials -H "Authorization: Bearer <accessToken>"
+curl http://localhost:3000/api/materials -H "Authorization: Bearer <accessToken>"
 ```
 
-O contrato completo da sessão — atributos do cookie, por que cada instalação exige
-domínio próprio, e por que não há token anti-CSRF — está em
+O contrato completo da sessão — atributos do cookie, por que o navegador precisa
+enxergar um host só (e como a hospedagem faz isso), e por que não há token anti-CSRF — está em
 [docs/auth-contract.md](docs/auth-contract.md). A forma das respostas de erro e a tabela
 de códigos estão em [docs/api-contract.md](docs/api-contract.md).
 
@@ -292,13 +297,19 @@ status` é a única confirmação direta do estado do esquema.
 
 ### Domínio, CORS e bucket de imagens
 
-**Domínio.** O cookie de sessão é `SameSite=Lax`, então o frontend e a API precisam estar no
-mesmo site registrável (`app.empresa.com.br` e `api.empresa.com.br`). Dois subdomínios de um
-domínio público de hospedagem, como `onrender.com`, contam como sites distintos e não
-servem. Cada instalação, portanto, precisa de domínio próprio.
+**Um host só.** O cookie de sessão é `SameSite=Lax`, então o navegador só o devolve se a
+interface e a API forem o mesmo site. Dois subdomínios de um domínio público de hospedagem, como
+`onrender.com`, contam como sites distintos. A solução não é domínio próprio: a interface chama a
+API pelo **próprio host**, em `/api/...`, e a hospedagem encaminha (rewrite de `/api/*` para a URL
+pública desta API, **mantendo o `/api` no destino**). A API responde sob **`/api`**
+(`API_GLOBAL_PREFIX`, constante em `src/shared/presentation/http/api-prefix.ts`, não variável de
+ambiente), e o `Path` do cookie acompanha: `/api/auth`. O `/health` fica fora do prefixo, então o
+health check do Dockerfile e o da hospedagem continuam em `/health`. Detalhes e alternativas em
+[docs/auth-contract.md](docs/auth-contract.md), seção 4.
 
 **CORS.** `CORS_ORIGINS` lista as origens exatas do frontend, sem curinga. Sem ela a API
-não sobe em produção.
+não sobe em produção. Com a interface chamando a API pelo próprio host, o navegador não faz
+chamada entre origens e o CORS não é exercitado em produção; a variável continua obrigatória.
 
 **Bucket de imagens (`STORAGE_PROVIDER=S3`).** O bucket é **público para leitura, com URL
 fixa**, e não usa URL pré-assinada: são fotos de insumo e de produto, sem dado sensível, e

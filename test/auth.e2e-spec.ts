@@ -14,6 +14,7 @@ import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.servic
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
 import { refreshCookieHeader, requireRefreshToken } from './support/refresh-cookie';
+import { api } from './support/api';
 
 interface ErrorBody {
   statusCode: number;
@@ -49,7 +50,7 @@ describe('Authentication (e2e)', () => {
   // thenable, not a resolved Promise) so callers can still append
   // `.expect(...)` before awaiting it.
   function registerAsActor(email: string, name = 'Heric'): request.Test {
-    return request(server)
+    return api(server)
       .post('/users')
       .set('Authorization', actorAuthHeader)
       .send({ email, password, name });
@@ -104,7 +105,7 @@ describe('Authentication (e2e)', () => {
     });
 
     it('rejects a password shorter than 8 characters', async () => {
-      await request(server)
+      await api(server)
         .post('/users')
         .set('Authorization', actorAuthHeader)
         .send({ email: uniqueEmail(), password: 'short', name: 'Heric' })
@@ -114,7 +115,7 @@ describe('Authentication (e2e)', () => {
     it('refuses registration with no token at all, with 401', async () => {
       // Not `@Public()`: there are no roles in this system, so the only way
       // to create an account is as an already authenticated user.
-      await request(server)
+      await api(server)
         .post('/users')
         .send({ email: uniqueEmail(), password, name: 'Heric' })
         .expect(HttpStatus.UNAUTHORIZED);
@@ -126,7 +127,7 @@ describe('Authentication (e2e)', () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
 
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/login')
         .send({ email, password })
         .expect(HttpStatus.OK);
@@ -146,7 +147,7 @@ describe('Authentication (e2e)', () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
 
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/login')
         .send({ email, password: 'wrong password' })
         .expect(HttpStatus.UNAUTHORIZED);
@@ -155,7 +156,7 @@ describe('Authentication (e2e)', () => {
     });
 
     it('refuses an email with no account, with 401', async () => {
-      await request(server)
+      await api(server)
         .post('/auth/login')
         .send({ email: uniqueEmail(), password })
         .expect(HttpStatus.UNAUTHORIZED);
@@ -168,7 +169,7 @@ describe('Authentication (e2e)', () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
 
-      await request(server).post('/auth/login').send({ email, password }).expect(HttpStatus.OK);
+      await api(server).post('/auth/login').send({ email, password }).expect(HttpStatus.OK);
     });
   });
 
@@ -176,10 +177,10 @@ describe('Authentication (e2e)', () => {
     it('trades a valid refresh token for a new access token and a new cookie', async () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
-      const login = await request(server).post('/auth/login').send({ email, password });
+      const login = await api(server).post('/auth/login').send({ email, password });
       const refreshToken = requireRefreshToken(login);
 
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.OK);
@@ -192,22 +193,22 @@ describe('Authentication (e2e)', () => {
     it('rotates: the same refresh token cannot be used twice, with 401', async () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
-      const login = await request(server).post('/auth/login').send({ email, password });
+      const login = await api(server).post('/auth/login').send({ email, password });
       const refreshToken = requireRefreshToken(login);
 
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.OK);
 
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.UNAUTHORIZED);
     });
 
     it('refuses a refresh token that was never issued, with 401', async () => {
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader('not-a-real-refresh-token'))
         .expect(HttpStatus.UNAUTHORIZED);
@@ -216,7 +217,7 @@ describe('Authentication (e2e)', () => {
     it('refuses an expired refresh token, with 401', async () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
-      const login = await request(server).post('/auth/login').send({ email, password });
+      const login = await api(server).post('/auth/login').send({ email, password });
       const refreshToken = requireRefreshToken(login);
 
       await prisma.refreshToken.update({
@@ -224,7 +225,7 @@ describe('Authentication (e2e)', () => {
         data: { expiresAt: new Date(Date.now() - 1_000) },
       });
 
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.UNAUTHORIZED);
@@ -233,7 +234,7 @@ describe('Authentication (e2e)', () => {
     it('is reachable without a bearer token', async () => {
       // A client calling this has, by definition, no valid access token —
       // that is the whole reason it is here.
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader('irrelevant'))
         .expect(HttpStatus.UNAUTHORIZED); // rejected for being invalid, not for missing auth
@@ -244,29 +245,29 @@ describe('Authentication (e2e)', () => {
     it('revokes the refresh token so it can no longer be refreshed', async () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
-      const login = await request(server).post('/auth/login').send({ email, password });
+      const login = await api(server).post('/auth/login').send({ email, password });
       const refreshToken = requireRefreshToken(login);
 
-      await request(server)
+      await api(server)
         .post('/auth/logout')
         .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.NO_CONTENT);
 
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(refreshToken))
         .expect(HttpStatus.UNAUTHORIZED);
     });
 
     it('is idempotent for a token that does not exist', async () => {
-      await request(server)
+      await api(server)
         .post('/auth/logout')
         .set('Cookie', refreshCookieHeader('not-a-real-refresh-token'))
         .expect(HttpStatus.NO_CONTENT);
     });
 
     it('is idempotent with no cookie at all, so a client can always reach a logged-out state', async () => {
-      await request(server).post('/auth/logout').expect(HttpStatus.NO_CONTENT);
+      await api(server).post('/auth/logout').expect(HttpStatus.NO_CONTENT);
     });
   });
 
@@ -275,10 +276,10 @@ describe('Authentication (e2e)', () => {
       const email = uniqueEmail();
       await registerAndTrack(email);
 
-      const login = await request(server).post('/auth/login').send({ email, password });
+      const login = await api(server).post('/auth/login').send({ email, password });
       const { accessToken } = login.body as SessionResponse;
 
-      const response = await request(server)
+      const response = await api(server)
         .get('/users/me')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(HttpStatus.OK);
@@ -288,7 +289,7 @@ describe('Authentication (e2e)', () => {
     });
 
     it('refuses access with no token at all, with 401', async () => {
-      await request(server).get('/users/me').expect(HttpStatus.UNAUTHORIZED);
+      await api(server).get('/users/me').expect(HttpStatus.UNAUTHORIZED);
     });
 
     it('refuses an expired token, with 401', async () => {
@@ -298,14 +299,14 @@ describe('Authentication (e2e)', () => {
       // Signed with the app's real secret so only the expiry is wrong.
       const expiredToken = sign({ sub: userId, email }, jwtSecret, { expiresIn: -10 });
 
-      await request(server)
+      await api(server)
         .get('/users/me')
         .set('Authorization', `Bearer ${expiredToken}`)
         .expect(HttpStatus.UNAUTHORIZED);
     });
 
     it('refuses a malformed token, with 401', async () => {
-      await request(server)
+      await api(server)
         .get('/users/me')
         .set('Authorization', 'Bearer not-a-real-token')
         .expect(HttpStatus.UNAUTHORIZED);
@@ -314,11 +315,11 @@ describe('Authentication (e2e)', () => {
 
   describe('global guard over business routes', () => {
     it('refuses a business route with no token, with 401', async () => {
-      await request(server).get('/materials').expect(HttpStatus.UNAUTHORIZED);
+      await api(server).get('/materials').expect(HttpStatus.UNAUTHORIZED);
     });
 
     it('allows a business route once authenticated', async () => {
-      await request(server)
+      await api(server)
         .get('/materials')
         .set('Authorization', actorAuthHeader)
         .expect(HttpStatus.OK);

@@ -3,7 +3,6 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import type { MaterialView } from '../src/modules/materials/application/dto/materials.dto';
@@ -17,6 +16,7 @@ import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.servic
 import type { ErrorResponseBody } from '../src/shared/presentation/filters/all-exceptions.filter';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 interface ValidationFieldError {
   path: string;
@@ -61,7 +61,7 @@ describe('Stock losses (e2e)', () => {
     overrides: Record<string, unknown> = {},
   ): Promise<{ id: string; name: string }> {
     const name = `Bolacha ${randomUUID()}`;
-    const response = await request(server)
+    const response = await api(server)
       .post('/materials')
       .set('Authorization', authHeader)
       .send({
@@ -81,14 +81,11 @@ describe('Stock losses (e2e)', () => {
   }
 
   const postLoss = (materialId: string, body: Record<string, unknown>) =>
-    request(server)
-      .post(`/materials/${materialId}/losses`)
-      .set('Authorization', authHeader)
-      .send(body);
+    api(server).post(`/materials/${materialId}/losses`).set('Authorization', authHeader).send(body);
 
   const getMaterial = async (id: string): Promise<MaterialView> =>
     (
-      await request(server)
+      await api(server)
         .get(`/materials/${id}`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.OK)
@@ -143,14 +140,14 @@ describe('Stock losses (e2e)', () => {
     it('keeps the value of a loss when the cost of the Material changes later', async () => {
       const { id } = await createMaterial();
       await postLoss(id, { quantity: 5, reason: 'BREAKAGE' }).expect(HttpStatus.CREATED);
-      await request(server)
+      await api(server)
         .patch(`/materials/${id}`)
         .set('Authorization', authHeader)
         .send({ packageCost: '2.00' })
         .expect(HttpStatus.OK);
 
       const page = (
-        await request(server)
+        await api(server)
           .get('/materials/losses')
           .set('Authorization', authHeader)
           .query({ materialId: id })
@@ -207,7 +204,7 @@ describe('Stock losses (e2e)', () => {
 
     it('records a loss on a discontinued Material', async () => {
       const { id } = await createMaterial();
-      await request(server)
+      await api(server)
         .post(`/materials/${id}/discontinue`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.OK);
@@ -230,7 +227,7 @@ describe('Stock losses (e2e)', () => {
     it('refuses a negative relativeIncrement, naming the field', async () => {
       const { id } = await createMaterial();
 
-      const response = await request(server)
+      const response = await api(server)
         .post(`/materials/${id}/stock-entries`)
         .set('Authorization', authHeader)
         .send({ source: 'MANUAL', relativeIncrement: -1 })
@@ -244,7 +241,7 @@ describe('Stock losses (e2e)', () => {
     it('answers with the Material', async () => {
       const { id } = await createMaterial();
 
-      const response = await request(server)
+      const response = await api(server)
         .post(`/materials/${id}/stock-entries`)
         .set('Authorization', authHeader)
         .send({ source: 'MANUAL', relativeIncrement: 2 })
@@ -278,7 +275,7 @@ describe('Stock losses (e2e)', () => {
 
     async function getPage(query: Record<string, string | number>): Promise<StockLossPageView> {
       return (
-        await request(server)
+        await api(server)
           .get('/materials/losses')
           .set('Authorization', authHeader)
           .query(query)
@@ -344,7 +341,7 @@ describe('Stock losses (e2e)', () => {
 
     it('refuses a limit above the ceiling, a limit of zero, a negative offset and an unknown reason', async () => {
       for (const query of [{ limit: 101 }, { limit: 0 }, { offset: -1 }, { reason: 'NOPE' }]) {
-        await request(server)
+        await api(server)
           .get('/materials/losses')
           .set('Authorization', authHeader)
           .query(query)
@@ -356,7 +353,7 @@ describe('Stock losses (e2e)', () => {
   describe('GET /materials/losses/dataset', () => {
     const getDataset = async (query: Record<string, string>): Promise<StockLossDatasetView> =>
       (
-        await request(server)
+        await api(server)
           .get('/materials/losses/dataset')
           .set('Authorization', authHeader)
           .query(query)
@@ -471,7 +468,7 @@ describe('Stock losses (e2e)', () => {
     });
 
     it('refuses a request without the whole period', async () => {
-      await request(server)
+      await api(server)
         .get('/materials/losses/dataset')
         .set('Authorization', authHeader)
         .query({ from: '2098-03-01T03:00:00.000Z' })
@@ -481,7 +478,7 @@ describe('Stock losses (e2e)', () => {
 
   describe('DELETE /materials/losses/:lossId', () => {
     const removeLoss = (lossId: string) =>
-      request(server).delete(`/materials/losses/${lossId}`).set('Authorization', authHeader);
+      api(server).delete(`/materials/losses/${lossId}`).set('Authorization', authHeader);
 
     // 10 biscuits, 5 lost by mistake: removing the loss clears the total, and the
     // stock stays at 5 until the user puts the 5 back.
@@ -532,7 +529,7 @@ describe('Stock losses (e2e)', () => {
       const monthTotal = async () =>
         (
           (
-            await request(server)
+            await api(server)
               .get('/materials/losses/dataset')
               .set('Authorization', authHeader)
               .query(period)
@@ -545,7 +542,7 @@ describe('Stock losses (e2e)', () => {
 
       expect(await monthTotal()).toBe('1.00');
       const list = (
-        await request(server)
+        await api(server)
           .get('/materials/losses')
           .set('Authorization', authHeader)
           .query({ materialId: id })
@@ -571,14 +568,14 @@ describe('Stock losses (e2e)', () => {
       const { id } = await createMaterial();
       const loss = (await postLoss(id, { quantity: 1, reason: 'LOST' }).expect(HttpStatus.CREATED))
         .body as StockLossResultView;
-      await request(server)
+      await api(server)
         .delete(`/materials/${id}`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.UNPROCESSABLE_ENTITY);
 
       await removeLoss(loss.id).expect(HttpStatus.OK);
 
-      await request(server)
+      await api(server)
         .delete(`/materials/${id}`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.NO_CONTENT);
@@ -591,7 +588,7 @@ describe('Stock losses (e2e)', () => {
       ).body as StockLossResultView;
       await removeLoss(loss.id).expect(HttpStatus.OK);
 
-      const response = await request(server)
+      const response = await api(server)
         .get('/audit-log/activity')
         .set('Authorization', authHeader)
         .query({ limit: 100 })
@@ -628,14 +625,14 @@ describe('Stock losses (e2e)', () => {
         await postLoss(id, { quantity: 120, reason: 'SPOILAGE' }).expect(HttpStatus.CREATED)
       ).body as StockLossResultView;
       const listed = (
-        await request(server)
+        await api(server)
           .get('/materials/losses')
           .set('Authorization', authHeader)
           .query({ materialId: id })
           .expect(HttpStatus.OK)
       ).body as StockLossPageView;
       const removed = (
-        await request(server)
+        await api(server)
           .delete(`/materials/losses/${created.id}`)
           .set('Authorization', authHeader)
           .expect(HttpStatus.OK)
@@ -658,7 +655,7 @@ describe('Stock losses (e2e)', () => {
       await postLoss(oil.id, { quantity: 100, reason: 'SPOILAGE' }).expect(HttpStatus.CREATED);
 
       const page = (
-        await request(server)
+        await api(server)
           .get('/materials/losses')
           .set('Authorization', authHeader)
           .query({ limit: 100 })
@@ -678,7 +675,7 @@ describe('Stock losses (e2e)', () => {
       await postLoss(id, { quantity: 1, reason: 'BREAKAGE' }).expect(HttpStatus.CREATED);
       await postLoss(id, { quantity: 1, reason: 'LOST' }).expect(HttpStatus.CREATED);
 
-      const response = await request(server)
+      const response = await api(server)
         .delete(`/materials/${id}`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -700,7 +697,7 @@ describe('Stock losses (e2e)', () => {
     it('still deletes a Material that has none', async () => {
       const { id } = await createMaterial();
 
-      await request(server)
+      await api(server)
         .delete(`/materials/${id}`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.NO_CONTENT);
@@ -714,7 +711,7 @@ describe('Stock losses (e2e)', () => {
         await postLoss(id, { quantity: 1, reason: 'EXPIRED' }).expect(HttpStatus.CREATED)
       ).body as StockLossResultView;
 
-      const response = await request(server)
+      const response = await api(server)
         .get('/audit-log/activity')
         .set('Authorization', authHeader)
         .query({ limit: 100 })

@@ -2,7 +2,6 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import type { ImportedInvoiceView } from '../src/modules/invoices/application/dto/invoices.dto';
@@ -14,6 +13,7 @@ import type { PurchaseView } from '../src/modules/purchases/application/dto/purc
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 /**
  * A purchase typed in by hand becomes stock through the same classification
@@ -66,7 +66,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
   });
 
   it('creates the Material and brings the quantity into stock', async () => {
-    const created = await request(server)
+    const created = await api(server)
       .post('/purchases')
       .set('Authorization', authHeader)
       .send({
@@ -91,7 +91,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
     // Straight after registering, the line is not stock and nothing moved.
     expect(purchase.items[0].isStockMaterial).toBe(false);
 
-    const classified = await request(server)
+    const classified = await api(server)
       .post(`/invoices/purchases/${purchase.id}/classification`)
       .set('Authorization', authHeader)
       .send({
@@ -123,7 +123,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
   });
 
   it('adds to an existing Material when the line names one', async () => {
-    const existing = await request(server)
+    const existing = await api(server)
       .post('/materials')
       .set('Authorization', authHeader)
       .send({
@@ -139,7 +139,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
     const materialId = (existing.body as { id: string }).id;
     createdMaterialIds.push(materialId);
 
-    const created = await request(server)
+    const created = await api(server)
       .post('/purchases')
       .set('Authorization', authHeader)
       .send({
@@ -159,7 +159,7 @@ describe('Manual purchase becoming stock (e2e)', () => {
     const purchase = created.body as PurchaseView;
     createdPurchaseIds.push(purchase.id);
 
-    await request(server)
+    await api(server)
       .post(`/invoices/purchases/${purchase.id}/classification`)
       .set('Authorization', authHeader)
       .send({

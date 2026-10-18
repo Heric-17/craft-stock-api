@@ -17,6 +17,7 @@ import {
   refreshCookieHeader,
   requireRefreshToken,
 } from './support/refresh-cookie';
+import { api, apiRoute } from './support/api';
 
 /**
  * The session transport, end to end.
@@ -42,7 +43,7 @@ describe('Session cookie (e2e)', () => {
     const user = await app.get(UsersService).register({ email, password, name: 'Heric' });
     createdUserIds.push(user.id);
 
-    return request(server).post('/auth/login').send({ email, password }).expect(HttpStatus.OK);
+    return api(server).post('/auth/login').send({ email, password }).expect(HttpStatus.OK);
   }
 
   beforeAll(async () => {
@@ -110,7 +111,7 @@ describe('Session cookie (e2e)', () => {
         .expect(HttpStatus.OK);
 
       // And narrow enough to stay off the business routes.
-      expect('/materials'.startsWith(path)).toBe(false);
+      expect(apiRoute('/materials').startsWith(path)).toBe(false);
     });
 
     it('gives the cookie the refresh token lifetime', async () => {
@@ -139,7 +140,7 @@ describe('Session cookie (e2e)', () => {
       const login = await registerAndLogin();
       const first = requireRefreshToken(login);
 
-      const refreshed = await request(server)
+      const refreshed = await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(first))
         .expect(HttpStatus.OK);
@@ -152,7 +153,7 @@ describe('Session cookie (e2e)', () => {
     it('re-arms the cookie attributes on the rotated value', async () => {
       const login = await registerAndLogin();
 
-      const refreshed = await request(server)
+      const refreshed = await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(requireRefreshToken(login)))
         .expect(HttpStatus.OK);
@@ -167,26 +168,26 @@ describe('Session cookie (e2e)', () => {
       const login = await registerAndLogin();
       const first = requireRefreshToken(login);
 
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(first))
         .expect(HttpStatus.OK);
 
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(first))
         .expect(HttpStatus.UNAUTHORIZED);
     });
 
     it('answers 401 with INVALID_REFRESH_TOKEN when no cookie was sent', async () => {
-      const response = await request(server).post('/auth/refresh').expect(HttpStatus.UNAUTHORIZED);
+      const response = await api(server).post('/auth/refresh').expect(HttpStatus.UNAUTHORIZED);
 
       expect((response.body as ErrorResponseBody).code).toBe('INVALID_REFRESH_TOKEN');
     });
 
     /** A cleared cookie must not reach the lookup as if it were a token. */
     it('answers 401 for an empty cookie value', async () => {
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', `${REFRESH_TOKEN_COOKIE}=`)
         .expect(HttpStatus.UNAUTHORIZED);
@@ -200,7 +201,7 @@ describe('Session cookie (e2e)', () => {
     it('ignores a refresh token offered in the request body', async () => {
       const login = await registerAndLogin();
 
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .send({ refreshToken: requireRefreshToken(login) })
         .expect(HttpStatus.UNAUTHORIZED);
@@ -211,7 +212,7 @@ describe('Session cookie (e2e)', () => {
     it('clears the cookie', async () => {
       const login = await registerAndLogin();
 
-      const logout = await request(server)
+      const logout = await api(server)
         .post('/auth/logout')
         .set('Cookie', refreshCookieHeader(requireRefreshToken(login)))
         .expect(HttpStatus.NO_CONTENT);
@@ -229,7 +230,7 @@ describe('Session cookie (e2e)', () => {
     it('clears it on the same path it was written with', async () => {
       const login = await registerAndLogin();
 
-      const logout = await request(server)
+      const logout = await api(server)
         .post('/auth/logout')
         .set('Cookie', refreshCookieHeader(requireRefreshToken(login)))
         .expect(HttpStatus.NO_CONTENT);
@@ -243,19 +244,19 @@ describe('Session cookie (e2e)', () => {
       const login = await registerAndLogin();
       const token = requireRefreshToken(login);
 
-      await request(server)
+      await api(server)
         .post('/auth/logout')
         .set('Cookie', refreshCookieHeader(token))
         .expect(HttpStatus.NO_CONTENT);
 
-      await request(server)
+      await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(token))
         .expect(HttpStatus.UNAUTHORIZED);
     });
 
     it('clears the cookie and answers 204 even with no cookie at all', async () => {
-      const logout = await request(server).post('/auth/logout').expect(HttpStatus.NO_CONTENT);
+      const logout = await api(server).post('/auth/logout').expect(HttpStatus.NO_CONTENT);
 
       expect(parseRefreshCookie(logout)?.value).toBe('');
     });
@@ -271,12 +272,12 @@ describe('Session cookie (e2e)', () => {
       const login = await registerAndLogin();
       const token = requireRefreshToken(login);
 
-      const refreshed = await request(server)
+      const refreshed = await api(server)
         .post('/auth/refresh')
         .set('Cookie', refreshCookieHeader(token))
         .expect(HttpStatus.OK);
 
-      const logout = await request(server)
+      const logout = await api(server)
         .post('/auth/logout')
         .set('Cookie', refreshCookieHeader(requireRefreshToken(refreshed)))
         .expect(HttpStatus.NO_CONTENT);
@@ -301,7 +302,7 @@ describe('Session cookie (e2e)', () => {
     it('refuses a business route that presents only the session cookie', async () => {
       const login = await registerAndLogin();
 
-      await request(server)
+      await api(server)
         .get('/materials')
         .set('Cookie', refreshCookieHeader(requireRefreshToken(login)))
         .expect(HttpStatus.UNAUTHORIZED);
@@ -311,7 +312,7 @@ describe('Session cookie (e2e)', () => {
       const login = await registerAndLogin();
       const { accessToken } = login.body as SessionResponse;
 
-      await request(server)
+      await api(server)
         .get('/materials')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(HttpStatus.OK);

@@ -1,6 +1,11 @@
 /**
- * The global route prefix of the API. Empty today: routes live at `/auth`,
- * `/sales` and so on.
+ * The global route prefix of the API: routes live at `/api/auth`, `/api/sales`
+ * and so on.
+ *
+ * The web app is served from its own host and reaches the API through a
+ * rewrite of `/api/*` on that host, so the browser only ever talks to one
+ * site. The prefix is what makes the paths line up on both sides: the cookie
+ * the API sets has to name the path the browser actually calls.
  *
  * It is declared once, here, and applied to the app by `configureApp`, so that
  * anything that has to know where a route really lives asks this module
@@ -9,11 +14,20 @@
  * literal that stopped matching the routes would silently stop the cookie
  * from being sent, and the symptom would look like a session bug.
  *
- * Giving the API a prefix means changing the constant below. The health check
- * the container declares and the public path of the local image storage are
- * not derived from it and have to be reviewed together with that change.
+ * The public path of the local image storage is not under it: an `imageUrl` is
+ * absolute and points at this API's own host, never through the rewrite.
  */
-export const API_GLOBAL_PREFIX = '';
+export const API_GLOBAL_PREFIX = 'api';
+
+/** Path of the liveness probe. */
+export const HEALTH_ROUTE = 'health';
+
+/**
+ * Routes left outside the prefix. Only the liveness probe: the container's
+ * `HEALTHCHECK` and the hosting platform's health check call `/health`, and
+ * neither should have to change whenever the prefix does.
+ */
+export const UNPREFIXED_ROUTES: readonly string[] = [HEALTH_ROUTE];
 
 /** Joins a prefix and route segments into an absolute path: `('api', 'auth')` is `/api/auth`. */
 export function joinApiPath(prefix: string, ...segments: string[]): string {

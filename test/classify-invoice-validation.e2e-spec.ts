@@ -2,12 +2,12 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 interface ValidationFieldError {
   path: string;
@@ -48,7 +48,7 @@ describe('Invoice classification, decimal places (e2e)', () => {
   });
 
   async function classify(item: Record<string, unknown>) {
-    return request(server)
+    return api(server)
       .post('/invoices/purchases/not-a-real-purchase/classification')
       .set('Authorization', authHeader)
       .send({

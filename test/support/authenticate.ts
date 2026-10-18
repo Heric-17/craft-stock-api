@@ -3,10 +3,10 @@ import type { Server } from 'node:http';
 
 import { HttpStatus } from '@nestjs/common';
 import type { TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import type { SessionResponse } from '../../src/modules/auth/application/dto/auth.dto';
 import { UsersService } from '../../src/modules/users/application/services/users.service';
+import { api } from './api';
 
 export interface AuthenticatedActor {
   /** Ready for `.set('Authorization', authHeader)`. */
@@ -33,7 +33,7 @@ export async function authenticate(
     .get(UsersService)
     .register({ email, password, name: 'E2E Test User' });
 
-  const response = await request(server)
+  const response = await api(server)
     .post('/auth/login')
     .send({ email, password })
     .expect(HttpStatus.OK);

@@ -3,7 +3,6 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import type {
@@ -13,6 +12,7 @@ import type {
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 /**
  * `GET /invoices/pending`, paged, against a real database. The captures are
@@ -66,7 +66,7 @@ describe('GET /invoices/pending pagination (e2e)', () => {
   });
 
   async function getPage(query: Record<string, string | number>): Promise<PendingInvoicePageView> {
-    const response = await request(server)
+    const response = await api(server)
       .get('/invoices/pending')
       .set('Authorization', authHeader)
       .query(query)
@@ -148,7 +148,7 @@ describe('GET /invoices/pending pagination (e2e)', () => {
   });
 
   it('refuses a limit above the ceiling, as /purchases does', async () => {
-    await request(server)
+    await api(server)
       .get('/invoices/pending')
       .set('Authorization', authHeader)
       .query({ limit: 101 })
@@ -156,12 +156,12 @@ describe('GET /invoices/pending pagination (e2e)', () => {
   });
 
   it('refuses a limit of zero and a negative offset', async () => {
-    await request(server)
+    await api(server)
       .get('/invoices/pending')
       .set('Authorization', authHeader)
       .query({ limit: 0 })
       .expect(HttpStatus.BAD_REQUEST);
-    await request(server)
+    await api(server)
       .get('/invoices/pending')
       .set('Authorization', authHeader)
       .query({ offset: -1 })
@@ -169,7 +169,7 @@ describe('GET /invoices/pending pagination (e2e)', () => {
   });
 
   it('refuses a status that does not exist', async () => {
-    await request(server)
+    await api(server)
       .get('/invoices/pending')
       .set('Authorization', authHeader)
       .query({ status: 'NOPE' })

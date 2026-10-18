@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
+import type request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import type { SessionResponse } from '../src/modules/auth/application/dto/auth.dto';
@@ -18,6 +18,7 @@ import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.servic
 import type { ErrorResponseBody } from '../src/shared/presentation/filters/all-exceptions.filter';
 import { configureTestApp } from './support/configure-test-app';
 import { refreshCookieHeader, requireRefreshToken } from './support/refresh-cookie';
+import { api } from './support/api';
 
 /** Captures what the system would have mailed, so a test can follow the link. */
 class RecordingEmailSender implements EmailSender, EmailSenderFactory {
@@ -67,7 +68,7 @@ describe('Password change and recovery (e2e)', () => {
     email: string,
     password = oldPassword,
   ): Promise<{ authHeader: string; refreshToken: string }> {
-    const response = await request(server)
+    const response = await api(server)
       .post('/auth/login')
       .send({ email, password })
       .expect(HttpStatus.OK);
@@ -79,7 +80,7 @@ describe('Password change and recovery (e2e)', () => {
   }
 
   function refresh(token: string): request.Test {
-    return request(server).post('/auth/refresh').set('Cookie', refreshCookieHeader(token));
+    return api(server).post('/auth/refresh').set('Cookie', refreshCookieHeader(token));
   }
 
   function tokenFromMail(message: EmailMessage): string {
@@ -117,7 +118,7 @@ describe('Password change and recovery (e2e)', () => {
       const phone = await login(email);
       const computer = await login(email);
 
-      await request(server)
+      await api(server)
         .post('/auth/change-password')
         .set('Authorization', computer.authHeader)
         .set('Cookie', refreshCookieHeader(computer.refreshToken))
@@ -126,7 +127,7 @@ describe('Password change and recovery (e2e)', () => {
 
       await refresh(phone.refreshToken).expect(HttpStatus.UNAUTHORIZED);
       await refresh(computer.refreshToken).expect(HttpStatus.OK);
-      await request(server)
+      await api(server)
         .post('/auth/login')
         .send({ email, password: oldPassword })
         .expect(HttpStatus.UNAUTHORIZED);
@@ -141,7 +142,7 @@ describe('Password change and recovery (e2e)', () => {
       const { email } = await createUser();
       const session = await login(email);
 
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/change-password')
         .set('Authorization', session.authHeader)
         .set('Cookie', refreshCookieHeader(session.refreshToken))
@@ -157,7 +158,7 @@ describe('Password change and recovery (e2e)', () => {
       const { email } = await createUser();
       const session = await login(email);
 
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/change-password')
         .set('Authorization', session.authHeader)
         .send({ currentPassword: oldPassword, newPassword: 'short' })
@@ -169,7 +170,7 @@ describe('Password change and recovery (e2e)', () => {
     });
 
     it('requires a signed-in user', async () => {
-      await request(server)
+      await api(server)
         .post('/auth/change-password')
         .send({ currentPassword: oldPassword, newPassword })
         .expect(HttpStatus.UNAUTHORIZED);
@@ -180,10 +181,7 @@ describe('Password change and recovery (e2e)', () => {
     it('mails a link to a registered address and answers 204', async () => {
       const { email } = await createUser();
 
-      await request(server)
-        .post('/auth/forgot-password')
-        .send({ email })
-        .expect(HttpStatus.NO_CONTENT);
+      await api(server).post('/auth/forgot-password').send({ email }).expect(HttpStatus.NO_CONTENT);
 
       const [message] = mail.to(email);
       expect(message.subject).toContain('Redefinição de senha');
@@ -194,7 +192,7 @@ describe('Password change and recovery (e2e)', () => {
     it('answers 204 for an address with no account, and sends nothing', async () => {
       const email = `nobody-${randomUUID()}@craftstock.dev`;
 
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/forgot-password')
         .send({ email })
         .expect(HttpStatus.NO_CONTENT);
@@ -206,7 +204,7 @@ describe('Password change and recovery (e2e)', () => {
     it('finds the account whatever case the address is typed in', async () => {
       const { email } = await createUser();
 
-      await request(server)
+      await api(server)
         .post('/auth/forgot-password')
         .send({ email: email.toUpperCase() })
         .expect(HttpStatus.NO_CONTENT);
@@ -217,20 +215,14 @@ describe('Password change and recovery (e2e)', () => {
     it('does not mail again while the cooldown runs', async () => {
       const { email } = await createUser();
 
-      await request(server)
-        .post('/auth/forgot-password')
-        .send({ email })
-        .expect(HttpStatus.NO_CONTENT);
-      await request(server)
-        .post('/auth/forgot-password')
-        .send({ email })
-        .expect(HttpStatus.NO_CONTENT);
+      await api(server).post('/auth/forgot-password').send({ email }).expect(HttpStatus.NO_CONTENT);
+      await api(server).post('/auth/forgot-password').send({ email }).expect(HttpStatus.NO_CONTENT);
 
       expect(mail.to(email)).toHaveLength(1);
     });
 
     it('rejects something that is not an address', async () => {
-      await request(server)
+      await api(server)
         .post('/auth/forgot-password')
         .send({ email: 'not-an-email' })
         .expect(HttpStatus.BAD_REQUEST);
@@ -239,10 +231,7 @@ describe('Password change and recovery (e2e)', () => {
 
   describe('POST /auth/reset-password', () => {
     async function requestLink(email: string): Promise<string> {
-      await request(server)
-        .post('/auth/forgot-password')
-        .send({ email })
-        .expect(HttpStatus.NO_CONTENT);
+      await api(server).post('/auth/forgot-password').send({ email }).expect(HttpStatus.NO_CONTENT);
 
       return tokenFromMail(mail.to(email).at(-1)!);
     }
@@ -252,13 +241,13 @@ describe('Password change and recovery (e2e)', () => {
       const phone = await login(email);
       const token = await requestLink(email);
 
-      await request(server)
+      await api(server)
         .post('/auth/reset-password')
         .send({ token, newPassword })
         .expect(HttpStatus.NO_CONTENT);
 
       await refresh(phone.refreshToken).expect(HttpStatus.UNAUTHORIZED);
-      await request(server)
+      await api(server)
         .post('/auth/login')
         .send({ email, password: oldPassword })
         .expect(HttpStatus.UNAUTHORIZED);
@@ -268,12 +257,12 @@ describe('Password change and recovery (e2e)', () => {
     it('works only once', async () => {
       const { email } = await createUser();
       const token = await requestLink(email);
-      await request(server)
+      await api(server)
         .post('/auth/reset-password')
         .send({ token, newPassword })
         .expect(HttpStatus.NO_CONTENT);
 
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/reset-password')
         .send({ token, newPassword: 'yet another passphrase' })
         .expect(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -283,7 +272,7 @@ describe('Password change and recovery (e2e)', () => {
     });
 
     it('refuses a token that was never issued', async () => {
-      const response = await request(server)
+      const response = await api(server)
         .post('/auth/reset-password')
         .send({ token: 'f'.repeat(64), newPassword })
         .expect(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -299,7 +288,7 @@ describe('Password change and recovery (e2e)', () => {
         data: { expiresAt: new Date(Date.now() - 1000) },
       });
 
-      await request(server)
+      await api(server)
         .post('/auth/reset-password')
         .send({ token, newPassword })
         .expect(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -309,12 +298,12 @@ describe('Password change and recovery (e2e)', () => {
       const { email } = await createUser();
       const token = await requestLink(email);
 
-      await request(server)
+      await api(server)
         .post('/auth/reset-password')
         .send({ token, newPassword: 'short' })
         .expect(HttpStatus.BAD_REQUEST);
 
-      await request(server)
+      await api(server)
         .post('/auth/reset-password')
         .send({ token, newPassword })
         .expect(HttpStatus.NO_CONTENT);
@@ -324,14 +313,14 @@ describe('Password change and recovery (e2e)', () => {
       const { email } = await createUser();
       const token = await requestLink(email);
       const session = await login(email);
-      await request(server)
+      await api(server)
         .post('/auth/change-password')
         .set('Authorization', session.authHeader)
         .set('Cookie', refreshCookieHeader(session.refreshToken))
         .send({ currentPassword: oldPassword, newPassword })
         .expect(HttpStatus.NO_CONTENT);
 
-      await request(server)
+      await api(server)
         .post('/auth/reset-password')
         .send({ token, newPassword: 'yet another passphrase' })
         .expect(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -341,10 +330,7 @@ describe('Password change and recovery (e2e)', () => {
   describe('what is kept at rest', () => {
     it('stores only a hash of the token, and never the token in the audit trail', async () => {
       const { id, email } = await createUser();
-      await request(server)
-        .post('/auth/forgot-password')
-        .send({ email })
-        .expect(HttpStatus.NO_CONTENT);
+      await api(server).post('/auth/forgot-password').send({ email }).expect(HttpStatus.NO_CONTENT);
       const token = tokenFromMail(mail.to(email)[0]);
 
       const rows = await prisma.passwordResetToken.findMany({ where: { userId: id } });

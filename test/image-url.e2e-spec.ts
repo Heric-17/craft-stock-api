@@ -15,6 +15,7 @@ import { resolvePublicBaseUrl } from '../src/shared/infrastructure/storage/publi
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 /** A one-pixel PNG, enough to exercise a real multipart upload. */
 const PNG_BYTES = Buffer.from(
@@ -46,7 +47,7 @@ describe('Image URLs in responses (e2e)', () => {
   const uploadedKeys: string[] = [];
 
   async function createMaterial(): Promise<MaterialView> {
-    const response = await request(server)
+    const response = await api(server)
       .post('/materials')
       .set('Authorization', authHeader)
       .send({
@@ -67,7 +68,7 @@ describe('Image URLs in responses (e2e)', () => {
   }
 
   async function createProduct(): Promise<CompositeProductView> {
-    const response = await request(server)
+    const response = await api(server)
       .post('/composite-products')
       .set('Authorization', authHeader)
       .send({
@@ -87,7 +88,7 @@ describe('Image URLs in responses (e2e)', () => {
 
   function uploadTo(path: string): request.Test {
     return (
-      request(server)
+      api(server)
         .post(path)
         .set('Authorization', authHeader)
         .attach('file', PNG_BYTES, {
@@ -181,7 +182,7 @@ describe('Image URLs in responses (e2e)', () => {
       const material = await createMaterial();
       await uploadTo(`/materials/${material.id}/image`).expect(HttpStatus.OK);
 
-      const detail = await request(server)
+      const detail = await api(server)
         .get(`/materials/${material.id}`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.OK);
@@ -194,7 +195,7 @@ describe('Image URLs in responses (e2e)', () => {
       const material = await createMaterial();
       await uploadTo(`/materials/${material.id}/image`).expect(HttpStatus.OK);
 
-      const list = await request(server)
+      const list = await api(server)
         .get('/materials')
         .set('Authorization', authHeader)
         .expect(HttpStatus.OK);
@@ -207,7 +208,7 @@ describe('Image URLs in responses (e2e)', () => {
       const material = await createMaterial();
       await uploadTo(`/materials/${material.id}/image`).expect(HttpStatus.OK);
 
-      const cleared = await request(server)
+      const cleared = await api(server)
         .delete(`/materials/${material.id}/image`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.OK);
@@ -265,7 +266,7 @@ describe('Image URLs in responses (e2e)', () => {
       const product = await createProduct();
       await uploadTo(`/composite-products/${product.id}/image`).expect(HttpStatus.OK);
 
-      const cleared = await request(server)
+      const cleared = await api(server)
         .delete(`/composite-products/${product.id}/image`)
         .set('Authorization', authHeader)
         .expect(HttpStatus.OK);
@@ -285,7 +286,7 @@ describe('Image URLs in responses (e2e)', () => {
     const row = await prisma.material.findUniqueOrThrow({ where: { id: material.id } });
     const key = row.imageKey as string;
 
-    const detail = await request(server)
+    const detail = await api(server)
       .get(`/materials/${material.id}`)
       .set('Authorization', authHeader)
       .expect(HttpStatus.OK);
@@ -319,7 +320,8 @@ describe('Image URLs in responses (e2e)', () => {
     const response = await uploadTo(`/materials/${material.id}/image`).expect(HttpStatus.OK);
     const imageUrl = (response.body as MaterialView).imageUrl as string;
 
-    // Fetch by the path the URL names, which is what a browser would do.
+    // Fetch by the path the URL names, which is what a browser would do. The
+    // static mount is outside the route prefix, so the path is used as it is.
     const served = await request(server).get(new URL(imageUrl).pathname).expect(HttpStatus.OK);
 
     expect(served.headers['cache-control']).toContain('max-age=31536000');

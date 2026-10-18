@@ -2,7 +2,6 @@ import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import type {
@@ -14,6 +13,7 @@ import type {
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
+import { api } from './support/api';
 
 /**
  * The REST surface of the module, over HTTP, with the application's real
@@ -53,7 +53,7 @@ describe('Purchases API (e2e)', () => {
   });
 
   async function postManualPurchase(day: string, amount: string): Promise<PurchaseView> {
-    const response = await request(server)
+    const response = await api(server)
       .post('/purchases')
       .set('Authorization', authHeader)
       .send({
@@ -94,7 +94,7 @@ describe('Purchases API (e2e)', () => {
   });
 
   it('POST /purchases refuses a body the DTO does not accept', async () => {
-    await request(server)
+    await api(server)
       .post('/purchases')
       .set('Authorization', authHeader)
       .send({
@@ -105,7 +105,7 @@ describe('Purchases API (e2e)', () => {
 
     // A monetary amount given as a number is rejected rather than quietly
     // converted, for the same reason it is never returned as one.
-    await request(server)
+    await api(server)
       .post('/purchases')
       .set('Authorization', authHeader)
       .send({
@@ -127,7 +127,7 @@ describe('Purchases API (e2e)', () => {
     await postManualPurchase('2037-08-05T10:00:00.000Z', '20.00');
     await postManualPurchase('2037-08-06T10:00:00.000Z', '30.00');
 
-    const firstPage = await request(server)
+    const firstPage = await api(server)
       .get('/purchases')
       .set('Authorization', authHeader)
       .query({ from: PERIOD.from, to: PERIOD.to, limit: 2, offset: 0 })
@@ -139,7 +139,7 @@ describe('Purchases API (e2e)', () => {
     expect(body.items).toHaveLength(2);
     expect(body.limit).toBe(2);
 
-    const filtered = await request(server)
+    const filtered = await api(server)
       .get('/purchases')
       .set('Authorization', authHeader)
       .query({ establishmentId: '33.444.555/0001-66', from: PERIOD.from, to: PERIOD.to })
@@ -151,7 +151,7 @@ describe('Purchases API (e2e)', () => {
   it('GET /purchases rejects a page size past the ceiling', async () => {
     // Without a ceiling, one request could ask for every purchase ever
     // recorded and load every aggregate, lines included, into memory.
-    await request(server)
+    await api(server)
       .get('/purchases')
       .set('Authorization', authHeader)
       .query({ limit: 5000 })
@@ -159,7 +159,7 @@ describe('Purchases API (e2e)', () => {
   });
 
   it('GET /purchases/spending returns the dataset by dimension', async () => {
-    const response = await request(server)
+    const response = await api(server)
       .get('/purchases/spending')
       .set('Authorization', authHeader)
       .query({ from: PERIOD.from, to: PERIOD.to, granularity: 'MONTH' })
@@ -185,7 +185,7 @@ describe('Purchases API (e2e)', () => {
   });
 
   it('GET /purchases/spending refuses a granularity that is not a dimension', async () => {
-    await request(server)
+    await api(server)
       .get('/purchases/spending')
       .set('Authorization', authHeader)
       .query({ from: PERIOD.from, to: PERIOD.to, granularity: 'FORTNIGHT' })
@@ -195,7 +195,7 @@ describe('Purchases API (e2e)', () => {
   it('GET /purchases/:id answers with the detail, and 404 for one that does not exist', async () => {
     const created = await postManualPurchase('2037-08-07T10:00:00.000Z', '9.90');
 
-    const response = await request(server)
+    const response = await api(server)
       .get(`/purchases/${created.id}`)
       .set('Authorization', authHeader)
       .expect(HttpStatus.OK);
@@ -206,7 +206,7 @@ describe('Purchases API (e2e)', () => {
     // A purchase typed in by hand has no captured note, and says so.
     expect(detail.rawInvoiceData).toBeNull();
 
-    await request(server)
+    await api(server)
       .get('/purchases/0f4b2f8c-1d3e-4a5b-8c7d-9e0f1a2b3c4d')
       .set('Authorization', authHeader)
       .expect(HttpStatus.NOT_FOUND);
@@ -215,7 +215,7 @@ describe('Purchases API (e2e)', () => {
   it('edits the lines over HTTP and closes the edit', async () => {
     const created = await postManualPurchase('2037-08-08T10:00:00.000Z', '40.00');
 
-    const added = await request(server)
+    const added = await api(server)
       .post(`/purchases/${created.id}/items`)
       .set('Authorization', authHeader)
       .send({
@@ -229,21 +229,21 @@ describe('Purchases API (e2e)', () => {
 
     expect((added.body as PurchaseDetailView).grossTotal).toBe('48.00');
 
-    const removed = await request(server)
+    const removed = await api(server)
       .delete(`/purchases/${created.id}/items/${created.items[0].id}`)
       .set('Authorization', authHeader)
       .expect(HttpStatus.OK);
 
     expect((removed.body as PurchaseDetailView).grossTotal).toBe('8.00');
 
-    await request(server)
+    await api(server)
       .post(`/purchases/${created.id}/complete-edit`)
       .set('Authorization', authHeader)
       .expect(HttpStatus.OK);
   });
 
   it('refuses to close an edit that left a manual attribution pending, with 422', async () => {
-    const response = await request(server)
+    const response = await api(server)
       .post('/purchases')
       .set('Authorization', authHeader)
       .send({
@@ -271,7 +271,7 @@ describe('Purchases API (e2e)', () => {
     const created = response.body as PurchaseView;
     createdPurchaseIds.push(created.id);
 
-    await request(server)
+    await api(server)
       .patch(`/purchases/${created.id}/discount-allocation`)
       .set('Authorization', authHeader)
       .send({
@@ -283,19 +283,19 @@ describe('Purchases API (e2e)', () => {
       })
       .expect(HttpStatus.OK);
 
-    const pending = await request(server)
+    const pending = await api(server)
       .delete(`/purchases/${created.id}/items/${created.items[0].id}`)
       .set('Authorization', authHeader)
       .expect(HttpStatus.OK);
 
     expect((pending.body as PurchaseDetailView).allocationPending).toBe(true);
 
-    await request(server)
+    await api(server)
       .post(`/purchases/${created.id}/complete-edit`)
       .set('Authorization', authHeader)
       .expect(HttpStatus.UNPROCESSABLE_ENTITY);
 
-    await request(server)
+    await api(server)
       .patch(`/purchases/${created.id}/discount-allocation`)
       .set('Authorization', authHeader)
       .send({
@@ -304,7 +304,7 @@ describe('Purchases API (e2e)', () => {
       })
       .expect(HttpStatus.OK);
 
-    await request(server)
+    await api(server)
       .post(`/purchases/${created.id}/complete-edit`)
       .set('Authorization', authHeader)
       .expect(HttpStatus.OK);

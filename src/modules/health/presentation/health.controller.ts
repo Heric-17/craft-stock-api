@@ -1,6 +1,7 @@
 import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
 
 import { Public } from '../../../shared/presentation/decorators/public.decorator';
+import { HEALTH_ROUTE } from '../../../shared/presentation/http/api-prefix';
 
 interface HealthResponse {
   status: 'ok';
@@ -14,7 +15,7 @@ interface HealthResponse {
  * exception is `@Public()`, since a probe that itself required a bearer
  * token would not be a liveness check.
  */
-@Controller('health')
+@Controller(HEALTH_ROUTE)
 export class HealthController {
   @Public()
   @Get()
