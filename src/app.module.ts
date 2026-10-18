@@ -16,6 +16,8 @@ import { UsersModule } from './modules/users/users.module';
 import { AllExceptionsFilter } from './shared/presentation/filters/all-exceptions.filter';
 import { RequestContextMiddleware } from './shared/presentation/middleware/request-context.middleware';
 import { validationExceptionFactory } from './shared/presentation/http/validation-error-details';
+import { RateLimitGuard } from './shared/presentation/rate-limit/rate-limit.guard';
+import { RateLimitModule } from './shared/presentation/rate-limit/rate-limit.module';
 import { LoggingModule } from './shared/infrastructure/logging/logging.module';
 import { NotificationsModule } from './shared/infrastructure/notifications/notifications.module';
 import { PrismaModule } from './shared/infrastructure/prisma/prisma.module';
@@ -31,6 +33,7 @@ import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-wo
     NotificationsModule,
     PrismaModule,
     UnitOfWorkModule,
+    RateLimitModule,
     AuthModule,
     MaterialsModule,
     CompositeProductsModule,
@@ -61,6 +64,14 @@ import { UnitOfWorkModule } from './shared/infrastructure/persistence/unit-of-wo
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
+    },
+    // Global, and declared BEFORE the authentication guard on purpose: guards
+    // run in registration order, so a flood of requests with a bad or missing
+    // token is turned away by the rate limit without ever reaching the work
+    // of verifying a token.
+    {
+      provide: APP_GUARD,
+      useExisting: RateLimitGuard,
     },
     // Global: every route requires a bearer token unless it carries
     // `@Public()`. `useExisting` reuses the instance `AuthModule` already

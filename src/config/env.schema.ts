@@ -129,6 +129,36 @@ export const envSchema = z
     // nobody would find out until someone needed one. An installation used only
     // as an API, with no mail configured, does not need it.
     WEB_APP_URL: z.string().url().optional(),
+    // How many reverse proxies sit between the internet and this process, which
+    // is what decides what "the client's IP" means for rate limiting: Express
+    // reads the real address from the Nth entry counted from the right of
+    // `X-Forwarded-For`. A count and not a boolean on purpose: `true` would
+    // trust the header's leftmost entry, which the client writes itself, and
+    // anyone could pick the address they are counted under. Empty is "not
+    // set", not zero — the preprocess is there because coercion would turn ""
+    // into 0 and hide that the production check below has nothing to check.
+    TRUST_PROXY: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      z.coerce.number().int().min(0).max(10).optional(),
+    ),
+    // Rate limiting, one budget per kind of route: at most LIMIT requests per
+    // client IP and route in a window of WINDOW_SECONDS. DEFAULT covers every
+    // route not named below; AUTH covers password attempts; RECOVERY covers
+    // the routes that send mail or spend a reset token.
+    RATE_LIMIT_DEFAULT_LIMIT: z.coerce.number().int().min(1).default(300),
+    RATE_LIMIT_DEFAULT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(60),
+    RATE_LIMIT_AUTH_LIMIT: z.coerce.number().int().min(1).default(10),
+    RATE_LIMIT_AUTH_WINDOW_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(15 * 60),
+    RATE_LIMIT_RECOVERY_LIMIT: z.coerce.number().int().min(1).default(5),
+    RATE_LIMIT_RECOVERY_WINDOW_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(60 * 60),
   })
   .superRefine((env, ctx) => {
     if (env.STORAGE_PROVIDER === 'S3' && !env.S3_BUCKET_NAME) {
@@ -194,6 +224,20 @@ export const envSchema = z
             'must not be false in production: it would send the refresh token cookie over plain HTTP.',
         });
       }
+    }
+
+    // No default in production because either guess fails silently. Assuming
+    // no proxy behind one makes every client share the proxy's address, so the
+    // limit locks everybody out together after a handful of requests; assuming
+    // a proxy without one lets a client name its own address in a header and
+    // never reach the limit. Zero is a valid answer: "exposed directly".
+    if (env.NODE_ENV === 'production' && env.TRUST_PROXY === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['TRUST_PROXY'],
+        message:
+          'is required in production: the number of reverse proxies in front of the API (1 for a single proxy or platform router, 0 when the API is reached directly). It decides which address the rate limit counts a client under.',
+      });
     }
 
     // Only mail that is actually delivered carries the link, so only then does

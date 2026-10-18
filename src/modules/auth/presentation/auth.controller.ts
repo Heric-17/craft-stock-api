@@ -7,6 +7,7 @@ import {
   type AuthenticatedRequestUser,
 } from '../../../shared/presentation/decorators/current-user.decorator';
 import { Public } from '../../../shared/presentation/decorators/public.decorator';
+import { RateLimit } from '../../../shared/presentation/decorators/rate-limit.decorator';
 import type { SessionResponse, SessionResult } from '../application/dto/auth.dto';
 import { AuthenticationService } from '../application/services/authentication.service';
 import { PasswordService } from '../application/services/password.service';
@@ -32,6 +33,7 @@ export class AuthController {
   ) {}
 
   @Public()
+  @RateLimit('AUTH')
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
@@ -83,6 +85,7 @@ export class AuthController {
    * to stay open. A 422, not a 401, when the current password is wrong — a
    * client reads 401 as an expired session and signs the person out.
    */
+  @RateLimit('AUTH')
   @Post('change-password')
   @HttpCode(HttpStatus.NO_CONTENT)
   async changePassword(
@@ -100,6 +103,7 @@ export class AuthController {
 
   /** Always 204, whether or not the address belongs to an account. */
   @Public()
+  @RateLimit('RECOVERY')
   @Post('forgot-password')
   @HttpCode(HttpStatus.NO_CONTENT)
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
@@ -107,6 +111,7 @@ export class AuthController {
   }
 
   @Public()
+  @RateLimit('RECOVERY')
   @Post('reset-password')
   @HttpCode(HttpStatus.NO_CONTENT)
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {

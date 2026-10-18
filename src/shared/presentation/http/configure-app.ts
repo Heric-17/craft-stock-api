@@ -19,6 +19,14 @@ const ALLOWED_HEADERS = ['Content-Type', 'Authorization', CORRELATION_ID_HEADER]
 const PREFLIGHT_MAX_AGE_SECONDS = 86_400;
 
 export function configureApp(app: NestExpressApplication, env: EnvService): void {
+  // Before anything reads `request.ip`, which the rate limit counts clients
+  // by. Behind a reverse proxy the socket address is the proxy's own, so the
+  // real one is taken from `X-Forwarded-For`, trusting only as many entries
+  // from the right as there are proxies of ours: the entries to their left are
+  // written by the client and can say anything. Zero (and the development
+  // fallback) means no proxy: the header is ignored outright.
+  app.set('trust proxy', env.get('TRUST_PROXY') ?? 0);
+
   app.use(cookieParser());
 
   if (API_GLOBAL_PREFIX.length > 0) {

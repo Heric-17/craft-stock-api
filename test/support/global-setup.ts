@@ -38,6 +38,15 @@ export default async function globalSetup(): Promise<void> {
   process.env.UPLOADS_DIR = uploadsDir;
   globalThis.__CRAFTSTOCK_UPLOADS_DIR__ = uploadsDir;
 
+  // The suite signs in over and over from one address, which is exactly what
+  // the rate limit exists to refuse. Out of the way for every spec by default;
+  // `rate-limit.e2e-spec.ts` sets its own, tight values before it builds its
+  // app. A developer's `.env` can not loosen or tighten this either.
+  process.env.RATE_LIMIT_DEFAULT_LIMIT = '100000';
+  process.env.RATE_LIMIT_AUTH_LIMIT = '100000';
+  process.env.RATE_LIMIT_RECOVERY_LIMIT = '100000';
+  delete process.env.TRUST_PROXY;
+
   const container = await new PostgreSqlContainer('postgres:18-alpine').start();
 
   process.env.DATABASE_URL = container.getConnectionUri();

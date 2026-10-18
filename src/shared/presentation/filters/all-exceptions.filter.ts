@@ -24,6 +24,7 @@ import {
 import { ErrorAlertService } from '../../application/observability/error-alert.service';
 import { DomainError } from '../../domain/errors/domain.error';
 import { ImageUploadFailedError } from '../../domain/errors/image-upload-failed.error';
+import { RateLimitExceededError } from '../../domain/errors/rate-limit-exceeded.error';
 import {
   describeFailure,
   type RequestErrorDetails,
@@ -102,6 +103,9 @@ const DOMAIN_ERROR_STATUS: readonly {
   // The storage backend (disk or S3) did not complete an upload or a delete.
   // Nothing is wrong with the request; it is worth retrying.
   { error: ImageUploadFailedError, status: HttpStatus.SERVICE_UNAVAILABLE },
+  // Too many requests from one address in the window. The caller is not wrong,
+  // only early: `details` says how long to wait.
+  { error: RateLimitExceededError, status: HttpStatus.TOO_MANY_REQUESTS },
 ];
 
 interface DescribedError {
@@ -304,6 +308,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
         stack,
         AllExceptionsFilter.name,
       );
+      return;
+    }
+
+    // Already logged by the rate limit guard, which knows the client's address
+    // and the route; a second line here would only repeat it without either.
+    if (exception instanceof RateLimitExceededError) {
       return;
     }
 

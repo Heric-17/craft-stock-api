@@ -134,6 +134,18 @@ explicando.
 | `AUTH_COOKIE_SECURE` | não | `true` | `Secure` no cookie de sessão. `false` só em desenvolvimento — o Safari descarta cookie `Secure` em `http://localhost`. Recusado em produção |
 | `ARGON2_TIME_COST` | não | `3` | Iterações do argon2, de 1 a 10 |
 
+**Limitação de taxa** (decisões e como conferir: [Proxy reverso e limitação de taxa](#proxy-reverso-e-limitação-de-taxa))
+
+| Variável | Obrigatória | Padrão | Descrição |
+| --- | --- | --- | --- |
+| `TRUST_PROXY` | **em produção** | vazia | Quantos proxies reversos ficam entre a internet e a API: `1` para um proxy ou roteador de plataforma, `0` para API exposta direto. Define com qual IP o cliente é contado. Inteiro de 0 a 10, nunca `true`. Impede a inicialização se faltar em produção; vazia em desenvolvimento vale `0` |
+| `RATE_LIMIT_DEFAULT_LIMIT` / `_WINDOW_SECONDS` | não | `300` / `60` | Orçamento de toda rota que não nomeia outro: requisições por IP e rota dentro da janela |
+| `RATE_LIMIT_AUTH_LIMIT` / `_WINDOW_SECONDS` | não | `10` / `900` | Tentativas de senha: `POST /auth/login` e `POST /auth/change-password` |
+| `RATE_LIMIT_RECOVERY_LIMIT` / `_WINDOW_SECONDS` | não | `5` / `3600` | Recuperação de senha: `POST /auth/forgot-password` e `POST /auth/reset-password` |
+
+Limites são inteiros a partir de 1, janelas são segundos a partir de 1; não existe valor
+que desligue a limitação, só números maiores. O health check nunca é limitado.
+
 **Importação de NFC-e**
 
 | Variável | Obrigatória | Padrão | Descrição |
@@ -294,6 +306,47 @@ npx prisma migrate status    # esperado: "Database schema is up to date!"
 Como o entrypoint já faz a migration falhar a subida do contêiner (seção acima), um
 contêiner em execução já é indício forte de que a migration passou — mas `migrate
 status` é a única confirmação direta do estado do esquema.
+
+### Proxy reverso e limitação de taxa
+
+A API limita as requisições **por IP e por rota** (`@nestjs/throttler`, contadores em
+memória do processo — a instalação é um processo único, e reiniciar zera a contagem, o
+que só favorece quem foi limitado). Acima do limite, a resposta é `429` com
+`code: RATE_LIMIT_EXCEEDED` e `details: { retryAfterSeconds, retryAt }`, mais o cabeçalho
+`Retry-After`; o contrato está em [docs/api-contract.md](docs/api-contract.md) §3.1.1. Cada
+recusa vira uma linha de log estruturado em nível `warn` (`context: RateLimit`, com rota,
+método e IP em `details`) e **não** dispara alerta: é evento esperado, não falha.
+
+**Qual IP é contado.** Atrás de um proxy reverso o endereço do socket é o do próprio
+proxy; sem tratamento, todos os clientes pareceriam um só, e o limite bloquearia todo
+mundo junto depois de poucas requisições. Por isso a API lê o IP real do
+`X-Forwarded-For`, e `TRUST_PROXY` diz **quantos proxies nossos** confiar, contando da
+direita: o proxy acrescenta ao fim da lista o endereço que viu, e tudo à esquerda foi
+escrito pelo cliente e pode dizer qualquer coisa.
+
+Decisões registradas:
+
+- **Contagem de proxies, não booleano.** `true` confiaria na entrada mais à esquerda, que o
+  cliente escolhe: bastaria mandar um `X-Forwarded-For` diferente a cada tentativa para
+  nunca chegar ao limite. Há teste cobrindo exatamente isso.
+- **Sem padrão em produção.** Os dois palpites erram em silêncio, em sentidos opostos
+  (todos bloqueados juntos, ou ninguém bloqueado), então a variável é exigida e o
+  processo não sobe sem ela. `0` é resposta válida: "a API é alcançada direto".
+- **Como descobrir o valor.** Em plataformas gerenciadas e na frente de um único
+  nginx/Caddy/Traefik, `1`. Com uma CDN na frente do proxy, `2`. Conferência: com
+  `LOG_LEVEL=info`, provoque um `429` (ex.: onze logins errados) e leia o campo `ip` no log
+  `Rate limit reached`: tem que ser o seu IP público, não o do proxy nem um endereço
+  interno (`10.x`, `172.16–31.x`, `192.168.x`, `127.0.0.1`).
+- **IPv6.** O limite conta pelo prefixo `/64`, não pelo endereço inteiro, porque quem tem
+  um IPv6 residencial controla um bloco inteiro e trocar de endereço dentro dele seria
+  contornar o limite de graça.
+- **Fora do limite.** `GET /health`: a plataforma o consulta de um endereço só, em
+  intervalo fixo, e um `429` ali seria lido como processo morto.
+- **Ordem.** O limite roda antes da autenticação: requisições sem token ou com token
+  inválido são recusadas sem custo de verificação.
+- **Atrás de NAT compartilhado** (um escritório inteiro com o mesmo IP público), o
+  limite de login vale para o conjunto de usuários. Se os números padrão não servirem,
+  ajuste as variáveis acima.
 
 ### Domínio, CORS e bucket de imagens
 

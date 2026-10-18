@@ -19,6 +19,7 @@ import { CORRELATION_ID_HEADER } from '../src/shared/presentation/middleware/req
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
 import { api, apiRoute } from './support/api';
+import { waitForRequestLog as waitForRequestLogRow } from './support/wait-for-request-log';
 
 /**
  * A password, a CPF and a token, all planted in the text of a failure on
@@ -238,23 +239,8 @@ describe('Request failure records (e2e)', () => {
       .set(CORRELATION_ID_HEADER, correlationId);
   }
 
-  /**
-   * The request row is written on the response's `finish` event, deliberately
-   * outside the business transaction, so it lands a moment after the client
-   * already has its answer.
-   */
-  async function waitForRequestLog(correlationId: string) {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const row = await prisma.requestLog.findFirst({ where: { correlationId } });
-
-      if (row) {
-        return row;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-
-    throw new Error(`No RequestLog row was written for correlationId ${correlationId}`);
+  function waitForRequestLog(correlationId: string) {
+    return waitForRequestLogRow(prisma, { correlationId });
   }
 
   describe('a failure inside a transaction that rolls back', () => {

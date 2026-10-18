@@ -1,4 +1,5 @@
 import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 
 import { Public } from '../../../shared/presentation/decorators/public.decorator';
 import { HEALTH_ROUTE } from '../../../shared/presentation/http/api-prefix';
@@ -13,8 +14,12 @@ interface HealthResponse {
  * Liveness probe. Deliberately free of business rules and of any dependency
  * that could make the process look unhealthy while it is merely idle — the
  * exception is `@Public()`, since a probe that itself required a bearer
- * token would not be a liveness check.
+ * token would not be a liveness check. It is likewise outside the rate limit:
+ * the platform polls it from one address on a fixed schedule, and a probe
+ * answered with 429 would read as a dead process and get the container
+ * restarted.
  */
+@SkipThrottle()
 @Controller(HEALTH_ROUTE)
 export class HealthController {
   @Public()

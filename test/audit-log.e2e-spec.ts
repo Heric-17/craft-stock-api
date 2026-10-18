@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 
 import { HttpStatus, type INestApplication } from '@nestjs/common';
@@ -9,9 +10,11 @@ import type { MaterialView } from '../src/modules/materials/application/dto/mate
 import type { SaleView } from '../src/modules/sales/application/dto/sales.dto';
 import { UsersService } from '../src/modules/users/application/services/users.service';
 import { PrismaService } from '../src/shared/infrastructure/prisma/prisma.service';
+import { CORRELATION_ID_HEADER } from '../src/shared/presentation/middleware/request-context.middleware';
 import { authenticate } from './support/authenticate';
 import { configureTestApp } from './support/configure-test-app';
 import { api, apiRoute } from './support/api';
+import { waitForRequestLog } from './support/wait-for-request-log';
 
 /**
  * End-to-end coverage of §15.2's automatic audit capture, driven over real
@@ -99,9 +102,7 @@ describe('Audit trail (e2e)', () => {
     const changes = row.changes as Record<string, { old: unknown; new: unknown }>;
     expect(changes.name).toEqual({ old: null, new: material.name });
 
-    const requestLog = await prisma.requestLog.findUnique({
-      where: { transactionId: row.transactionId },
-    });
+    const requestLog = await waitForRequestLog(prisma, { transactionId: row.transactionId });
     expect(requestLog).toMatchObject({
       route: apiRoute('/materials'),
       httpMethod: 'POST',
@@ -193,27 +194,23 @@ describe('Audit trail (e2e)', () => {
     const sale = saleCreated.body as SaleView;
     createdSaleIds.push(sale.id);
 
-    const assembled = await api(server)
+    const correlationId = `e2e-audit-assemble-${randomUUID()}`;
+    await api(server)
       .patch(`/sales/${sale.id}/production-status`)
       .set('Authorization', authHeader)
+      .set(CORRELATION_ID_HEADER, correlationId)
       .send({ productionStatus: 'ASSEMBLED' })
       .expect(HttpStatus.OK);
 
-    void assembled;
-
-    const requestLog = await prisma.requestLog.findFirst({
-      where: { route: apiRoute('/sales/:id/production-status'), httpMethod: 'PATCH' },
-      orderBy: { occurredAt: 'desc' },
-    });
-    expect(requestLog).not.toBeNull();
+    const requestLog = await waitForRequestLog(prisma, { correlationId });
 
     const writes = await prisma.auditLog.findMany({
-      where: { transactionId: requestLog!.transactionId },
+      where: { transactionId: requestLog.transactionId },
     });
 
     const touchedEntityTypes = new Set(writes.map((w) => w.entityType));
     expect(touchedEntityTypes).toEqual(new Set(['Sale', 'StockMovementSnapshot', 'Material']));
-    expect(writes.every((w) => w.transactionId === requestLog!.transactionId)).toBe(true);
+    expect(writes.every((w) => w.transactionId === requestLog.transactionId)).toBe(true);
   });
 
   it('resolves an investigation by transactionId and by correlationId to the same result', async () => {
@@ -222,6 +219,7 @@ describe('Audit trail (e2e)', () => {
     const auditRow = await prisma.auditLog.findFirstOrThrow({
       where: { entityType: 'Material', entityId: material.id, operation: 'CREATE' },
     });
+    await waitForRequestLog(prisma, { transactionId: auditRow.transactionId });
 
     const byTransactionId = await api(server)
       .get('/audit-log/investigate')

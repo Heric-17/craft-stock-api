@@ -33,6 +33,12 @@ describe('validateEnv', () => {
       ERROR_ALERT_THROTTLE_SECONDS: 300,
       SMTP_PORT: 587,
       SMTP_SECURE: false,
+      RATE_LIMIT_DEFAULT_LIMIT: 300,
+      RATE_LIMIT_DEFAULT_WINDOW_SECONDS: 60,
+      RATE_LIMIT_AUTH_LIMIT: 10,
+      RATE_LIMIT_AUTH_WINDOW_SECONDS: 900,
+      RATE_LIMIT_RECOVERY_LIMIT: 5,
+      RATE_LIMIT_RECOVERY_WINDOW_SECONDS: 3_600,
     });
   });
 
@@ -206,6 +212,7 @@ describe('validateEnv', () => {
       CORS_ORIGINS: 'https://app.empresa.com.br',
       PUBLIC_BASE_URL: 'https://api.empresa.com.br',
       WEB_APP_URL: 'https://app.empresa.com.br',
+      TRUST_PROXY: '1',
     };
 
     it('accepts a fully configured production environment', () => {
@@ -214,6 +221,20 @@ describe('validateEnv', () => {
       expect(env.CORS_ORIGINS).toBe('https://app.empresa.com.br');
       expect(env.PUBLIC_BASE_URL).toBe('https://api.empresa.com.br');
       expect(env.AUTH_COOKIE_SECURE).toBe(true);
+      expect(env.TRUST_PROXY).toBe(1);
+    });
+
+    /**
+     * Either guess is silent when wrong: assuming no proxy puts every client
+     * under the proxy's address, assuming one lets a client choose its own.
+     */
+    it('requires TRUST_PROXY in production, and treats an empty value as unset', () => {
+      expect(() => validateEnv({ ...PRODUCTION, TRUST_PROXY: undefined })).toThrow(/TRUST_PROXY/);
+      expect(() => validateEnv({ ...PRODUCTION, TRUST_PROXY: '' })).toThrow(/TRUST_PROXY/);
+    });
+
+    it('accepts zero as the answer "no proxy" in production', () => {
+      expect(validateEnv({ ...PRODUCTION, TRUST_PROXY: '0' }).TRUST_PROXY).toBe(0);
     });
 
     /**
@@ -274,6 +295,50 @@ describe('validateEnv', () => {
       expect(env.CORS_ORIGINS).toBe('');
       expect(env.PUBLIC_BASE_URL).toBeUndefined();
       expect(env.AUTH_COOKIE_SECURE).toBe(false);
+      expect(env.TRUST_PROXY).toBeUndefined();
+    });
+  });
+
+  describe('rate limiting', () => {
+    const BASE = { DATABASE_URL: VALID_DATABASE_URL, JWT_SECRET: VALID_JWT_SECRET };
+
+    it('reads each budget from the environment', () => {
+      const env = validateEnv({
+        ...BASE,
+        RATE_LIMIT_AUTH_LIMIT: '3',
+        RATE_LIMIT_AUTH_WINDOW_SECONDS: '120',
+        RATE_LIMIT_RECOVERY_LIMIT: '2',
+        RATE_LIMIT_RECOVERY_WINDOW_SECONDS: '240',
+        RATE_LIMIT_DEFAULT_LIMIT: '50',
+        RATE_LIMIT_DEFAULT_WINDOW_SECONDS: '10',
+      });
+
+      expect(env).toMatchObject({
+        RATE_LIMIT_AUTH_LIMIT: 3,
+        RATE_LIMIT_AUTH_WINDOW_SECONDS: 120,
+        RATE_LIMIT_RECOVERY_LIMIT: 2,
+        RATE_LIMIT_RECOVERY_WINDOW_SECONDS: 240,
+        RATE_LIMIT_DEFAULT_LIMIT: 50,
+        RATE_LIMIT_DEFAULT_WINDOW_SECONDS: 10,
+      });
+    });
+
+    /** A zero would be read as "no attempts allowed", not as "no limit". */
+    it.each(['0', '-1', '1.5', 'many'])('refuses %s as a limit', (value) => {
+      expect(() => validateEnv({ ...BASE, RATE_LIMIT_AUTH_LIMIT: value })).toThrow(
+        /RATE_LIMIT_AUTH_LIMIT/,
+      );
+    });
+
+    it('refuses a zero-length window', () => {
+      expect(() => validateEnv({ ...BASE, RATE_LIMIT_DEFAULT_WINDOW_SECONDS: '0' })).toThrow(
+        /RATE_LIMIT_DEFAULT_WINDOW_SECONDS/,
+      );
+    });
+
+    /** `true` would trust the header's leftmost entry, which the client writes. */
+    it.each(['true', '-1', '1.5', '11'])('refuses %s as a proxy count', (value) => {
+      expect(() => validateEnv({ ...BASE, TRUST_PROXY: value })).toThrow(/TRUST_PROXY/);
     });
   });
 });
