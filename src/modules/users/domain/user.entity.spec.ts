@@ -31,4 +31,22 @@ describe('User', () => {
   it('rejects an empty name', () => {
     expect(() => build({ name: ' ' })).toThrow(InvalidUserError);
   });
+
+  it('changes the password hash into a new instance and touches nothing else', () => {
+    const user = build();
+    const later = new Date('2026-02-01T00:00:00Z');
+
+    const changed = user.changePassword('new-hash', later);
+
+    expect(changed.passwordHash).toBe('new-hash');
+    expect(changed.updatedAt).toEqual(later);
+    expect(changed.id).toBe(user.id);
+    expect(changed.email).toBe(user.email);
+    expect(changed.createdAt).toEqual(user.createdAt);
+    expect(user.passwordHash).toBe('hashed-password');
+  });
+
+  it('refuses to change to an empty hash', () => {
+    expect(() => build().changePassword(' ', new Date())).toThrow(InvalidUserError);
+  });
 });

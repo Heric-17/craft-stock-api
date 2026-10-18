@@ -16,7 +16,12 @@ export class PrismaUserRepository implements UserRepository {
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    const row = await this.prisma.user.findUnique({ where: { email } });
+    // Case-insensitive: an address is the same address however it was typed,
+    // and accounts created before this rule keep whatever case they were
+    // stored with, so the lookup has to be the one that forgives.
+    const row = await this.prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+    });
     return row ? UserMapper.toDomain(row) : null;
   }
 

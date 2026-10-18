@@ -39,4 +39,9 @@ export class User {
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }
+
+  /** The same account with a new password hash. The caller hashes; the entity only holds. */
+  changePassword(passwordHash: string, now: Date): User {
+    return new User({ ...this, passwordHash, updatedAt: now });
+  }
 }

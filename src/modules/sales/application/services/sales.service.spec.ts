@@ -15,6 +15,7 @@ import { InMemoryMaterialRepository } from '../../../materials/infrastructure/pe
 import { InMemoryStockLossRepository } from '../../../../modules/materials/infrastructure/persistence/in-memory-stock-loss.repository';
 import { InMemoryPurchaseRepository } from '../../../purchases/infrastructure/persistence/in-memory-purchase.repository';
 import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
+import { InMemoryPasswordResetTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-password-reset-token.repository';
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
 import {
   DiscontinuedMaterialReferenceError,
@@ -47,6 +48,7 @@ function buildService(): {
     users: new InMemoryUserRepository(),
     stockLosses: new InMemoryStockLossRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
+    passwordResetTokens: new InMemoryPasswordResetTokenRepository(),
   };
 
   return {

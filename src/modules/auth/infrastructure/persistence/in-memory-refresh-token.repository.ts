@@ -15,4 +15,18 @@ export class InMemoryRefreshTokenRepository implements RefreshTokenRepository {
     this.tokens.set(token.id, token);
     return Promise.resolve();
   }
+
+  async revokeActiveByUserId(userId: string, now: Date, exceptTokenHash?: string): Promise<void> {
+    for (const token of this.tokens.values()) {
+      if (
+        token.userId === userId &&
+        token.revokedAt === null &&
+        token.tokenHash !== exceptTokenHash
+      ) {
+        this.tokens.set(token.id, token.revoke(now));
+      }
+    }
+
+    return Promise.resolve();
+  }
 }

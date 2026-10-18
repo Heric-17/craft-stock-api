@@ -2,11 +2,19 @@ import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/
 import type { Request, Response } from 'express';
 
 import { EnvService } from '../../../config/env.service';
+import {
+  CurrentUser,
+  type AuthenticatedRequestUser,
+} from '../../../shared/presentation/decorators/current-user.decorator';
 import { Public } from '../../../shared/presentation/decorators/public.decorator';
 import type { SessionResponse, SessionResult } from '../application/dto/auth.dto';
 import { AuthenticationService } from '../application/services/authentication.service';
+import { PasswordService } from '../application/services/password.service';
 import { InvalidRefreshTokenError } from '../domain/auth.error';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import {
   AUTH_ROUTE,
   clearRefreshTokenCookie,
@@ -19,6 +27,7 @@ import {
 export class AuthController {
   constructor(
     private readonly authentication: AuthenticationService,
+    private readonly passwords: PasswordService,
     private readonly env: EnvService,
   ) {}
 
@@ -66,6 +75,42 @@ export class AuthController {
     }
 
     clearRefreshTokenCookie(response, this.cookieConfig());
+  }
+
+  /**
+   * Under `/auth` and not `/users` on purpose: the refresh cookie is only
+   * sent to this path, and the session making the request is the one that has
+   * to stay open. A 422, not a 401, when the current password is wrong — a
+   * client reads 401 as an expired session and signs the person out.
+   */
+  @Post('change-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changePassword(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Body() dto: ChangePasswordDto,
+    @Req() request: Request,
+  ): Promise<void> {
+    await this.passwords.changePassword({
+      userId: user.id,
+      currentPassword: dto.currentPassword,
+      newPassword: dto.newPassword,
+      currentRefreshToken: readRefreshTokenCookie(request),
+    });
+  }
+
+  /** Always 204, whether or not the address belongs to an account. */
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
+    await this.passwords.requestReset(dto.email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    await this.passwords.resetPassword({ token: dto.token, newPassword: dto.newPassword });
   }
 
   private establishSession(session: SessionResult, response: Response): SessionResponse {

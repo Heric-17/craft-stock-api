@@ -37,6 +37,17 @@ export const NOTIFICATION_SENDERS = ['CONSOLE', 'SMTP'] as const;
 
 export type NotificationSenderKind = (typeof NOTIFICATION_SENDERS)[number];
 
+/**
+ * Which channel mail to a person (the password reset link) leaves through.
+ * `CONSOLE` only records that a message would have gone out; `SMTP` sends it.
+ * Separate from `NOTIFICATION_SENDER` because the two answer different
+ * questions — who maintains the installation versus who is asking — but they
+ * share the one set of `SMTP_*` connection settings.
+ */
+export const EMAIL_SENDERS = ['CONSOLE', 'SMTP'] as const;
+
+export type EmailSenderKind = (typeof EMAIL_SENDERS)[number];
+
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(NODE_ENVS).default('development'),
@@ -109,6 +120,15 @@ export const envSchema = z
     ALERT_EMAIL_FROM: z.string().email().optional(),
     // One address, or several separated by commas.
     ALERT_EMAIL_TO: z.string().min(1).optional(),
+    EMAIL_SENDER: z.enum(EMAIL_SENDERS).default('CONSOLE'),
+    // The From address of mail sent to people. Required when EMAIL_SENDER is SMTP.
+    EMAIL_FROM: z.string().email().optional(),
+    // Where the web app is served, which the link in a password reset e-mail
+    // points at. Required in production when EMAIL_SENDER is SMTP: a default
+    // would let an installation mail out links to the loopback address, and
+    // nobody would find out until someone needed one. An installation used only
+    // as an API, with no mail configured, does not need it.
+    WEB_APP_URL: z.string().url().optional(),
   })
   .superRefine((env, ctx) => {
     if (env.STORAGE_PROVIDER === 'S3' && !env.S3_BUCKET_NAME) {
@@ -176,20 +196,49 @@ export const envSchema = z
       }
     }
 
-    if (env.NOTIFICATION_SENDER !== 'SMTP') {
-      return;
+    // Only mail that is actually delivered carries the link, so only then does
+    // a missing base matter: it would send people a link to the loopback
+    // address. With CONSOLE nothing leaves the machine.
+    if (env.NODE_ENV === 'production' && env.EMAIL_SENDER === 'SMTP' && !env.WEB_APP_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['WEB_APP_URL'],
+        message:
+          'is required in production when EMAIL_SENDER is SMTP: the absolute base the web app is served at (e.g. https://app.empresa.com.br). The password reset link is built from it.',
+      });
     }
 
     // Checked at startup rather than on the first alert: an installation that
     // discovers its alerting is misconfigured at the moment it needs to alert
-    // has no alerting at all.
-    for (const key of ['SMTP_HOST', 'ALERT_EMAIL_FROM', 'ALERT_EMAIL_TO'] as const) {
-      if (!env[key]) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [key],
-          message: 'is required when NOTIFICATION_SENDER is SMTP',
-        });
+    // has no alerting at all. Same for the reset e-mail, which is needed
+    // exactly when someone is locked out.
+    type RequiredKey = 'SMTP_HOST' | 'ALERT_EMAIL_FROM' | 'ALERT_EMAIL_TO' | 'EMAIL_FROM';
+    const smtpRequirements: { when: boolean; selector: string; keys: RequiredKey[] }[] = [
+      {
+        when: env.NOTIFICATION_SENDER === 'SMTP',
+        selector: 'NOTIFICATION_SENDER',
+        keys: ['SMTP_HOST', 'ALERT_EMAIL_FROM', 'ALERT_EMAIL_TO'],
+      },
+      {
+        when: env.EMAIL_SENDER === 'SMTP',
+        selector: 'EMAIL_SENDER',
+        keys: ['SMTP_HOST', 'EMAIL_FROM'],
+      },
+    ];
+
+    for (const { when, selector, keys } of smtpRequirements) {
+      if (!when) {
+        continue;
+      }
+
+      for (const key of keys) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `is required when ${selector} is SMTP`,
+          });
+        }
       }
     }
   });

@@ -16,7 +16,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  refreshTokens RefreshToken[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 }
 
 // A session, not a historical record — section 9's "never Cascade" rule does
@@ -33,6 +34,26 @@ model RefreshToken {
   // boolean column, is what says "active" — same pattern as
   // Material.discontinuedAt.
   revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// A single-use link sent by e-mail so someone who lost their password can set
+// a new one. Like a RefreshToken it is a credential, not a historical record,
+// so a deleted User takes its tokens with it.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  // SHA-256 of the raw token, same principle as RefreshToken.tokenHash: the
+  // raw value exists once, in the e-mail, and never at rest.
+  tokenHash String    @unique
+  expiresAt DateTime
+  // Set when the token is spent by a reset, or superseded by a newer request.
+  // Absence, not a boolean, is what says "still usable".
+  usedAt    DateTime?
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

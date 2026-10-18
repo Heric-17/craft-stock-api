@@ -15,6 +15,7 @@ import { InvalidCredentialsError, InvalidRefreshTokenError } from '../../domain/
 import { hashRefreshToken } from '../../domain/refresh-token-hash';
 import { RefreshToken } from '../../domain/refresh-token.entity';
 import { InMemoryRefreshTokenRepository } from '../../infrastructure/persistence/in-memory-refresh-token.repository';
+import { InMemoryPasswordResetTokenRepository } from '../../infrastructure/persistence/in-memory-password-reset-token.repository';
 import { JwtTokenProvider } from '../../infrastructure/security/jwt-token.provider';
 import { AuthenticationService } from './authentication.service';
 
@@ -61,6 +62,7 @@ async function buildService(): Promise<{
     stockLosses: new InMemoryStockLossRepository(),
     users,
     refreshTokens,
+    passwordResetTokens: new InMemoryPasswordResetTokenRepository(),
   };
 
   const service = new AuthenticationService(

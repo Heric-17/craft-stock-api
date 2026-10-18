@@ -18,6 +18,7 @@ import {
 import { InMemoryPurchaseRepository } from '../../../purchases/infrastructure/persistence/in-memory-purchase.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
 import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
+import { InMemoryPasswordResetTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-password-reset-token.repository';
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
 import { InMemoryPendingInvoiceRepository } from '../../infrastructure/persistence/in-memory-pending-invoice.repository';
 import { InvoiceClassificationService } from './invoice-classification.service';
@@ -40,6 +41,7 @@ function buildService(): {
     users: new InMemoryUserRepository(),
     stockLosses: new InMemoryStockLossRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
+    passwordResetTokens: new InMemoryPasswordResetTokenRepository(),
   };
 
   return {

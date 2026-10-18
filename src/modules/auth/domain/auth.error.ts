@@ -22,3 +22,19 @@ export class InvalidTokenError extends DomainError {}
  * was is not the caller's to know.
  */
 export class InvalidRefreshTokenError extends DomainError {}
+
+/**
+ * Raised when the current password given to change it does not match the
+ * account's. Kept apart from `InvalidCredentialsError` on purpose: that one is
+ * a 401, which a client reads as "your session is gone" and answers by trying
+ * to refresh and then signing out. Here the session is fine and only the
+ * password typed into the form is wrong.
+ */
+export class InvalidCurrentPasswordError extends DomainError {}
+
+/**
+ * Raised when a password reset token is unknown, expired, or already used.
+ * One error for every case, same reasoning as `InvalidRefreshTokenError`:
+ * which case it was is not the caller's to know.
+ */
+export class InvalidPasswordResetTokenError extends DomainError {}

@@ -157,8 +157,11 @@ explicando.
 | `AUDIT_LOG_RETENTION_DAYS` | não | `180` | Janela de `AuditLog` |
 | `REQUEST_LOG_RETENTION_DAYS` | não | `30` | Janela de `RequestLog`, e com ela os campos de falha |
 | `NOTIFICATION_SENDER` | não | `CONSOLE` | `CONSOLE` (log) \| `SMTP` (e-mail) |
+| `EMAIL_SENDER` | não | `CONSOLE` | Canal do e-mail enviado a pessoas (redefinição de senha): `CONSOLE` (escreve a mensagem, com o link, no log; em produção só destinatário e assunto) \| `SMTP` |
+| `EMAIL_FROM` | só com `EMAIL_SENDER=SMTP` | — | Remetente desse e-mail |
+| `WEB_APP_URL` | **em produção com `EMAIL_SENDER=SMTP`** | vazia | Base absoluta do app web; é contra ela que o link do e-mail de redefinição de senha é montado. Impede a inicialização se faltar nessa combinação; uma API usada sozinha, sem e-mail, não precisa dela. Vazia em desenvolvimento cai em `http://localhost:5173` |
 | `ERROR_ALERT_THROTTLE_SECONDS` | não | `300` | Silêncio por tipo de erro após um alerta; `0` desliga |
-| `SMTP_HOST` | só com `SMTP` | — | Servidor SMTP |
+| `SMTP_HOST` | só com `SMTP` (alerta ou e-mail) | — | Servidor SMTP |
 | `SMTP_PORT` | não | `587` | Porta SMTP |
 | `SMTP_SECURE` | não | `false` | `true` \| `false` |
 | `SMTP_USER` / `SMTP_PASSWORD` | não | — | Credenciais, quando o servidor exige |

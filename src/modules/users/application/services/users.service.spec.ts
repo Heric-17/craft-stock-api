@@ -5,6 +5,7 @@ import { InMemoryUnitOfWork } from '../../../../shared/infrastructure/persistenc
 import type { RepositoryContext } from '../../../../shared/domain/persistence/unit-of-work';
 import { InMemoryCompositeProductRepository } from '../../../composite-products/infrastructure/persistence/in-memory-composite-product.repository';
 import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
+import { InMemoryPasswordResetTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-password-reset-token.repository';
 import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructure/persistence/in-memory-pending-invoice.repository';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
 import { InMemoryStockLossRepository } from '../../../../modules/materials/infrastructure/persistence/in-memory-stock-loss.repository';
@@ -33,6 +34,7 @@ function buildService(): { service: UsersService; users: InMemoryUserRepository 
     users,
     stockLosses: new InMemoryStockLossRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
+    passwordResetTokens: new InMemoryPasswordResetTokenRepository(),
   };
 
   const service = new UsersService(
@@ -80,6 +82,17 @@ describe('UsersService', () => {
       await service.register(buildInput());
 
       await expect(service.register(buildInput({ name: 'Outro Heric' }))).rejects.toThrow(
+        EmailAlreadyInUseError,
+      );
+    });
+  });
+
+  describe('register, email case', () => {
+    it('treats an address that differs only in case as already registered', async () => {
+      const { service } = buildService();
+      await service.register(buildInput());
+
+      await expect(service.register(buildInput({ email: 'HERIC@CraftStock.dev' }))).rejects.toThrow(
         EmailAlreadyInUseError,
       );
     });

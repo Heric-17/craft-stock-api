@@ -10,7 +10,10 @@ export class InMemoryUserRepository implements UserRepository {
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return Promise.resolve([...this.users.values()].find((user) => user.email === email) ?? null);
+    return Promise.resolve(
+      [...this.users.values()].find((user) => user.email.toLowerCase() === email.toLowerCase()) ??
+        null,
+    );
   }
 
   async save(user: User): Promise<void> {

@@ -6,6 +6,7 @@ import type { PurchaseRepository } from '../../../modules/purchases/domain/repos
 import type { PendingInvoiceRepository } from '../../../modules/invoices/domain/repositories/pending-invoice.repository';
 import type { UserRepository } from '../../../modules/users/domain/repositories/user.repository';
 import type { RefreshTokenRepository } from '../../../modules/auth/domain/repositories/refresh-token.repository';
+import type { PasswordResetTokenRepository } from '../../../modules/auth/domain/repositories/password-reset-token.repository';
 
 export interface RepositoryContext {
   materials: MaterialRepository;
@@ -16,6 +17,7 @@ export interface RepositoryContext {
   pendingInvoices: PendingInvoiceRepository;
   users: UserRepository;
   refreshTokens: RefreshTokenRepository;
+  passwordResetTokens: PasswordResetTokenRepository;
 }
 
 export const UNIT_OF_WORK = Symbol('UNIT_OF_WORK');

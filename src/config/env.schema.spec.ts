@@ -29,6 +29,7 @@ describe('validateEnv', () => {
       S3_REGION: 'us-east-1',
       MAX_IMAGE_UPLOAD_SIZE_BYTES: 5 * 1024 * 1024,
       NOTIFICATION_SENDER: 'CONSOLE',
+      EMAIL_SENDER: 'CONSOLE',
       ERROR_ALERT_THROTTLE_SECONDS: 300,
       SMTP_PORT: 587,
       SMTP_SECURE: false,
@@ -74,6 +75,33 @@ describe('validateEnv', () => {
   });
 
   /** `Boolean('false')` is true, which is the whole reason this is not coerced. */
+  it('requires the sender address and host when e-mail to people goes out by SMTP', () => {
+    const base = {
+      DATABASE_URL: VALID_DATABASE_URL,
+      JWT_SECRET: VALID_JWT_SECRET,
+      EMAIL_SENDER: 'SMTP',
+    };
+
+    expect(() => validateEnv(base)).toThrow(/SMTP_HOST/);
+    expect(() => validateEnv({ ...base, SMTP_HOST: 'smtp.example.com' })).toThrow(/EMAIL_FROM/);
+    expect(
+      validateEnv({ ...base, SMTP_HOST: 'smtp.example.com', EMAIL_FROM: 'no-reply@example.com' })
+        .EMAIL_SENDER,
+    ).toBe('SMTP');
+  });
+
+  it('does not ask for the alert recipients just because e-mail to people uses SMTP', () => {
+    expect(() =>
+      validateEnv({
+        DATABASE_URL: VALID_DATABASE_URL,
+        JWT_SECRET: VALID_JWT_SECRET,
+        EMAIL_SENDER: 'SMTP',
+        SMTP_HOST: 'smtp.example.com',
+        EMAIL_FROM: 'no-reply@example.com',
+      }),
+    ).not.toThrow();
+  });
+
   it('reads SMTP_SECURE=false as false', () => {
     const env = validateEnv({
       DATABASE_URL: VALID_DATABASE_URL,
@@ -177,6 +205,7 @@ describe('validateEnv', () => {
       NODE_ENV: 'production',
       CORS_ORIGINS: 'https://app.empresa.com.br',
       PUBLIC_BASE_URL: 'https://api.empresa.com.br',
+      WEB_APP_URL: 'https://app.empresa.com.br',
     };
 
     it('accepts a fully configured production environment', () => {
@@ -200,6 +229,22 @@ describe('validateEnv', () => {
       expect(() => validateEnv({ ...PRODUCTION, PUBLIC_BASE_URL: undefined })).toThrow(
         /PUBLIC_BASE_URL/,
       );
+    });
+
+    it('requires WEB_APP_URL in production when e-mail is sent, so a reset link never points at localhost', () => {
+      expect(() =>
+        validateEnv({
+          ...PRODUCTION,
+          WEB_APP_URL: undefined,
+          EMAIL_SENDER: 'SMTP',
+          SMTP_HOST: 'smtp.empresa.com.br',
+          EMAIL_FROM: 'no-reply@empresa.com.br',
+        }),
+      ).toThrow(/WEB_APP_URL/);
+    });
+
+    it('boots in production without WEB_APP_URL when no e-mail is sent, as an API on its own', () => {
+      expect(() => validateEnv({ ...PRODUCTION, WEB_APP_URL: undefined })).not.toThrow();
     });
 
     it('refuses a non-secure session cookie in production', () => {

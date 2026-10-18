@@ -9,6 +9,7 @@ import { InMemoryMaterialRepository } from '../../../materials/infrastructure/pe
 import { InMemoryStockLossRepository } from '../../../../modules/materials/infrastructure/persistence/in-memory-stock-loss.repository';
 import { InMemorySaleRepository } from '../../../sales/infrastructure/persistence/in-memory-sale.repository';
 import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
+import { InMemoryPasswordResetTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-password-reset-token.repository';
 import { InMemoryUserRepository } from '../../../users/infrastructure/persistence/in-memory-user.repository';
 import { InMemoryPurchaseAnalyticsAdapter } from '../../infrastructure/analytics/in-memory-purchase-analytics.adapter';
 import { InMemoryPurchaseRepository } from '../../infrastructure/persistence/in-memory-purchase.repository';
@@ -36,6 +37,7 @@ function buildSuite(): Suite {
     users: new InMemoryUserRepository(),
     stockLosses: new InMemoryStockLossRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
+    passwordResetTokens: new InMemoryPasswordResetTokenRepository(),
   };
   const unitOfWork = new InMemoryUnitOfWork(context);
 

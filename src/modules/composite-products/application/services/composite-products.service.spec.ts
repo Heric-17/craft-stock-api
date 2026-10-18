@@ -12,6 +12,7 @@ import {
   InMemoryStorageProviderFactory,
 } from '../../../../shared/infrastructure/storage/in-memory-storage-provider';
 import { InMemoryRefreshTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-refresh-token.repository';
+import { InMemoryPasswordResetTokenRepository } from '../../../auth/infrastructure/persistence/in-memory-password-reset-token.repository';
 import { InMemoryPendingInvoiceRepository } from '../../../invoices/infrastructure/persistence/in-memory-pending-invoice.repository';
 import { Material } from '../../../materials/domain/material.entity';
 import { InMemoryMaterialRepository } from '../../../materials/infrastructure/persistence/in-memory-material.repository';
@@ -72,6 +73,7 @@ function buildService(storage: InMemoryStorageProvider = new InMemoryStorageProv
     users: new InMemoryUserRepository(),
     stockLosses: new InMemoryStockLossRepository(),
     refreshTokens: new InMemoryRefreshTokenRepository(),
+    passwordResetTokens: new InMemoryPasswordResetTokenRepository(),
   };
   const logger = silentLogger();
 
