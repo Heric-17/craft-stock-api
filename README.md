@@ -138,7 +138,7 @@ explicando.
 
 | Variável | Obrigatória | Padrão | Descrição |
 | --- | --- | --- | --- |
-| `TRUST_PROXY` | **em produção** | vazia | Quantos proxies reversos ficam entre a internet e a API: `1` para um proxy ou roteador de plataforma, `0` para API exposta direto. Define com qual IP o cliente é contado. Inteiro de 0 a 10, nunca `true`. Impede a inicialização se faltar em produção; vazia em desenvolvimento vale `0` |
+| `TRUST_PROXY` | **em produção** | vazia | Como distinguir os proxies à frente da API do cliente, o que define com qual IP ele é contado. Ou uma **contagem** (`1` para um proxy, `0` para API exposta direto, até `10`), ou uma **lista** de proxies conhecidos (`loopback,uniquelocal,cloudflare`; aceita também IP e CIDR). Nunca `true`. Impede a inicialização se faltar em produção; vazia em desenvolvimento vale `0`. No Render: `loopback,uniquelocal,cloudflare` |
 | `RATE_LIMIT_DEFAULT_LIMIT` / `_WINDOW_SECONDS` | não | `300` / `60` | Orçamento de toda rota que não nomeia outro: requisições por IP e rota dentro da janela |
 | `RATE_LIMIT_AUTH_LIMIT` / `_WINDOW_SECONDS` | não | `10` / `900` | Tentativas de senha: `POST /auth/login` e `POST /auth/change-password` |
 | `RATE_LIMIT_RECOVERY_LIMIT` / `_WINDOW_SECONDS` | não | `5` / `3600` | Recuperação de senha: `POST /auth/forgot-password` e `POST /auth/reset-password` |
@@ -320,15 +320,32 @@ método e IP em `details`) e **não** dispara alerta: é evento esperado, não f
 **Qual IP é contado.** Atrás de um proxy reverso o endereço do socket é o do próprio
 proxy; sem tratamento, todos os clientes pareceriam um só, e o limite bloquearia todo
 mundo junto depois de poucas requisições. Por isso a API lê o IP real do
-`X-Forwarded-For`, e `TRUST_PROXY` diz **quantos proxies nossos** confiar, contando da
-direita: o proxy acrescenta ao fim da lista o endereço que viu, e tudo à esquerda foi
-escrito pelo cliente e pode dizer qualquer coisa.
+`X-Forwarded-For`, lido **da direita para a esquerda**: cada proxy acrescenta ao fim da
+lista o endereço que viu, e tudo à esquerda do primeiro endereço que nenhum proxy nosso
+atesta foi escrito pelo cliente e pode dizer qualquer coisa. `TRUST_PROXY` diz quais
+entradas são proxies nossos, de duas maneiras:
+
+- **Contagem** (`1`): pula essa quantidade de entradas. Serve quando o número de proxies
+  nunca varia, como um nginx ou Caddy à frente da API.
+- **Lista** (`loopback,uniquelocal,cloudflare`): pula as entradas enquanto forem proxies
+  conhecidos e para na primeira que não for. Serve quando a cadeia tem tamanho variável.
+  `loopback` e `uniquelocal` cobrem a conexão local e a rede interna (`10.x`, `172.16–31.x`,
+  `192.168.x`); `cloudflare` traz as faixas publicadas pela Cloudflare
+  ([src/config/cloudflare-ip-ranges.ts](src/config/cloudflare-ip-ranges.ts)); IPs e CIDRs
+  avulsos também valem.
 
 Decisões registradas:
 
-- **Contagem de proxies, não booleano.** `true` confiaria na entrada mais à esquerda, que o
-  cliente escolhe: bastaria mandar um `X-Forwarded-For` diferente a cada tentativa para
-  nunca chegar ao limite. Há teste cobrindo exatamente isso.
+- **Nunca booleano.** `true` confiaria na entrada mais à esquerda, que o cliente escolhe:
+  bastaria mandar um `X-Forwarded-For` diferente a cada tentativa para nunca chegar ao
+  limite. Há teste cobrindo exatamente isso.
+- **No Render, lista e não contagem.** O Render tem a Cloudflare na frente, e a cadeia
+  tem tamanhos diferentes conforme o caminho: já se viram cinco entradas (duas da
+  Cloudflare, duas internas) e três (uma de cada). Nenhuma contagem serve aos dois: um
+  número que acerta a cadeia longa passa do fim da curta e cai na entrada que o cliente
+  escreveu, o que deixou o limite burlável. Por endereço o resultado é o mesmo nos dois
+  casos. Se a Cloudflare publicar uma faixa nova e ela faltar na lista, o efeito é só os
+  clientes atrás daquele servidor dividirem um contador, nunca escolherem o próprio IP.
 - **Sem padrão em produção.** Os dois palpites erram em silêncio, em sentidos opostos
   (todos bloqueados juntos, ou ninguém bloqueado), então a variável é exigida e o
   processo não sobe sem ela. `0` é resposta válida: "a API é alcançada direto".
@@ -339,9 +356,11 @@ Decisões registradas:
   interno (`10.x`, `172.16–31.x`, `192.168.x`, `127.0.0.1`). O mesmo log traz de onde o
   `ip` saiu: `forwardedFor` (a cadeia que os proxies montaram, do cliente para a
   direita), `socketAddress` (a conexão em si) e `trustProxy` (o valor em vigor, que
-  mostra se a variável chegou ao processo). Se o `ip` for de uma CDN, o seu IP real
-  costuma estar numa entrada à esquerda de `forwardedFor`; some à contagem as entradas
-  que ficaram à direita dele.
+  mostra se a variável chegou ao processo; uma lista aparece como o número de entradas).
+  Se o `ip` for de uma CDN ou de um endereço interno, o seu IP real está numa entrada à
+  esquerda de `forwardedFor`: ou falta uma contagem a mais, ou falta o proxy na lista.
+  Repita o teste com `-H "X-Forwarded-For: 1.2.3.4"`: o `ip` tem que continuar sendo o
+  seu. Se virar `1.2.3.4`, a configuração está deixando o cliente escolher o próprio IP.
 - **IPv6.** O limite conta pelo prefixo `/64`, não pelo endereço inteiro, porque quem tem
   um IPv6 residencial controla um bloco inteiro e trocar de endereço dentro dele seria
   contornar o limite de graça.

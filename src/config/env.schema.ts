@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { parseTrustProxy, type TrustProxy } from './trust-proxy';
+
 export const LOG_LEVELS = ['error', 'warn', 'info', 'debug', 'verbose'] as const;
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -129,18 +131,31 @@ export const envSchema = z
     // nobody would find out until someone needed one. An installation used only
     // as an API, with no mail configured, does not need it.
     WEB_APP_URL: z.string().url().optional(),
-    // How many reverse proxies sit between the internet and this process, which
-    // is what decides what "the client's IP" means for rate limiting: Express
-    // reads the real address from the Nth entry counted from the right of
-    // `X-Forwarded-For`. A count and not a boolean on purpose: `true` would
-    // trust the header's leftmost entry, which the client writes itself, and
-    // anyone could pick the address they are counted under. Empty is "not
-    // set", not zero — the preprocess is there because coercion would turn ""
-    // into 0 and hide that the production check below has nothing to check.
-    TRUST_PROXY: z.preprocess(
-      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
-      z.coerce.number().int().min(0).max(10).optional(),
-    ),
+    // Which entries of `X-Forwarded-For` are our own proxies and which is the
+    // client, which is what decides the address rate limiting counts a client
+    // under. A count of proxies (`1`) or a list of known ones
+    // (`loopback,uniquelocal,cloudflare`); see `parseTrustProxy`. Never a
+    // boolean: `true` would trust the header's leftmost entry, which the client
+    // writes itself, and anyone could pick the address they are counted under.
+    // Empty is "not set", not zero, so the production check below has
+    // something to check.
+    TRUST_PROXY: z
+      .string()
+      .optional()
+      .transform((value, ctx): TrustProxy | undefined => {
+        if (value === undefined || value.trim() === '') {
+          return undefined;
+        }
+
+        const parsed = parseTrustProxy(value);
+
+        if (!parsed.ok) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: parsed.message });
+          return z.NEVER;
+        }
+
+        return parsed.value;
+      }),
     // Rate limiting, one budget per kind of route: at most LIMIT requests per
     // client IP and route in a window of WINDOW_SECONDS. DEFAULT covers every
     // route not named below; AUTH covers password attempts; RECOVERY covers
@@ -236,7 +251,7 @@ export const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['TRUST_PROXY'],
         message:
-          'is required in production: the number of reverse proxies in front of the API (1 for a single proxy or platform router, 0 when the API is reached directly). It decides which address the rate limit counts a client under.',
+          'is required in production: how to tell the proxies in front of the API from the client, either their number (1 for a single proxy, 0 when the API is reached directly) or a list of known ones (e.g. loopback,uniquelocal,cloudflare). It decides which address the rate limit counts a client under.',
       });
     }
 

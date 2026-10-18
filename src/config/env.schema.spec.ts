@@ -337,8 +337,21 @@ describe('validateEnv', () => {
     });
 
     /** `true` would trust the header's leftmost entry, which the client writes. */
-    it.each(['true', '-1', '1.5', '11'])('refuses %s as a proxy count', (value) => {
-      expect(() => validateEnv({ ...BASE, TRUST_PROXY: value })).toThrow(/TRUST_PROXY/);
+    it.each(['true', '-1', '1.5', '11', 'loopback,', 'nginx'])(
+      'refuses %s as a proxy setting',
+      (value) => {
+        expect(() => validateEnv({ ...BASE, TRUST_PROXY: value })).toThrow(/TRUST_PROXY/);
+      },
+    );
+
+    it('reads a list of known proxies, with cloudflare expanded to its ranges', () => {
+      const { TRUST_PROXY } = validateEnv({
+        ...BASE,
+        TRUST_PROXY: 'loopback,uniquelocal,cloudflare',
+      });
+
+      expect(TRUST_PROXY).toEqual(expect.arrayContaining(['loopback', 'uniquelocal']));
+      expect(TRUST_PROXY).toEqual(expect.arrayContaining(['172.64.0.0/13']));
     });
   });
 });

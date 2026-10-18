@@ -278,6 +278,57 @@ describe('Rate limiting (e2e)', () => {
     });
   });
 
+  /**
+   * The chains below are the two shapes the Render service actually produced,
+   * with the client's address replaced by a documentation one: five entries
+   * through two Cloudflare hops, and three through one. No count fits both,
+   * which is why the proxies are named by address instead.
+   */
+  describe('behind proxies known by address (TRUST_PROXY=loopback,uniquelocal,cloudflare)', () => {
+    let app: INestApplication;
+    let server: Server;
+
+    const LONG_CHAIN = '162.158.41.232, 162.158.41.232, 10.29.169.249, 10.25.15.2';
+    const SHORT_CHAIN = '162.158.41.72, 10.25.15.2';
+
+    beforeAll(async () => {
+      app = await createApp({
+        TRUST_PROXY: 'loopback,uniquelocal,cloudflare',
+        RATE_LIMIT_AUTH_LIMIT: '2',
+        RATE_LIMIT_AUTH_WINDOW_SECONDS: '60',
+      });
+      server = app.getHttpServer() as Server;
+    });
+
+    afterAll(async () => {
+      await app.close();
+    });
+
+    const loginFrom = (forwardedFor: string): request.Test =>
+      api(server)
+        .post('/auth/login')
+        .set('X-Forwarded-For', forwardedFor)
+        .send({ email: 'nobody@craftstock.dev', password: PASSWORD });
+
+    it('finds the same client at the end of a long chain and of a short one', async () => {
+      await loginFrom(`203.0.113.60, ${LONG_CHAIN}`).expect(HttpStatus.UNAUTHORIZED);
+      await loginFrom(`203.0.113.60, ${SHORT_CHAIN}`).expect(HttpStatus.UNAUTHORIZED);
+      await loginFrom(`203.0.113.60, ${LONG_CHAIN}`).expect(HttpStatus.TOO_MANY_REQUESTS);
+    });
+
+    it('does not count one client against the others behind the same edge', async () => {
+      await loginFrom(`203.0.113.61, ${LONG_CHAIN}`).expect(HttpStatus.UNAUTHORIZED);
+    });
+
+    it('does not let a client choose its address, whatever the length of the chain', async () => {
+      // 203.0.113.60 is spent above; a different leading entry must not
+      // reach a fresh counter, on the long chain or on the short one, which
+      // is where a fixed proxy count ran past the real entries.
+      await loginFrom(`1.2.3.4, 203.0.113.60, ${LONG_CHAIN}`).expect(HttpStatus.TOO_MANY_REQUESTS);
+      await loginFrom(`5.6.7.8, 203.0.113.60, ${SHORT_CHAIN}`).expect(HttpStatus.TOO_MANY_REQUESTS);
+    });
+  });
+
   describe('with no proxy configured (the default)', () => {
     let app: INestApplication;
     let server: Server;

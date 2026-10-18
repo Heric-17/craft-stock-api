@@ -18,6 +18,15 @@ const LOG_CONTEXT = 'RateLimit';
 /** The header is written by whoever calls, so it is cut before it reaches a log line. */
 const MAX_LOGGED_HEADER_LENGTH = 300;
 
+/** A count as it is; a list as its size, since the ranges would drown the line. */
+function describeTrustProxy(setting: unknown): string | number {
+  if (typeof setting === 'number') {
+    return setting;
+  }
+
+  return Array.isArray(setting) ? `list of ${setting.length} entries` : String(setting);
+}
+
 function truncate(header: string | string[] | undefined): string | undefined {
   return header === undefined
     ? undefined
@@ -62,10 +71,10 @@ export class RateLimitGuard extends ThrottlerGuard {
         ip: request.ip,
         // What `ip` was derived from, so a wrong `TRUST_PROXY` can be read off
         // the log instead of guessed at: the chain the proxies built, the
-        // address of the connection itself, and the count in force.
+        // address of the connection itself, and the setting in force.
         forwardedFor: truncate(request.headers['x-forwarded-for']),
         socketAddress: request.socket.remoteAddress,
-        trustProxy: request.app.get('trust proxy') as unknown,
+        trustProxy: describeTrustProxy(request.app.get('trust proxy')),
         limit: detail.limit,
         windowMs: detail.ttl,
         retryAfterSeconds,
