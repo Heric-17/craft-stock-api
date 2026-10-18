@@ -15,6 +15,15 @@ import { StructuredLogger } from '../../infrastructure/logging/structured-logger
 
 const LOG_CONTEXT = 'RateLimit';
 
+/** The header is written by whoever calls, so it is cut before it reaches a log line. */
+const MAX_LOGGED_HEADER_LENGTH = 300;
+
+function truncate(header: string | string[] | undefined): string | undefined {
+  return header === undefined
+    ? undefined
+    : [header].flat().join(', ').slice(0, MAX_LOGGED_HEADER_LENGTH);
+}
+
 /**
  * The throttler's guard, changed in the two places where the project's own
  * rules apply: the refusal is a domain error that the global filter renders in
@@ -51,6 +60,12 @@ export class RateLimitGuard extends ThrottlerGuard {
         route: (request.route as { path?: string } | undefined)?.path ?? request.originalUrl,
         method: request.method,
         ip: request.ip,
+        // What `ip` was derived from, so a wrong `TRUST_PROXY` can be read off
+        // the log instead of guessed at: the chain the proxies built, the
+        // address of the connection itself, and the count in force.
+        forwardedFor: truncate(request.headers['x-forwarded-for']),
+        socketAddress: request.socket.remoteAddress,
+        trustProxy: request.app.get('trust proxy') as unknown,
         limit: detail.limit,
         windowMs: detail.ttl,
         retryAfterSeconds,

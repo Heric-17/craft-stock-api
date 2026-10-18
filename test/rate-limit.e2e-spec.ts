@@ -224,6 +224,8 @@ describe('Rate limiting (e2e)', () => {
             event: 'rate_limit_exceeded',
             route: '/api/auth/login',
             method: 'POST',
+            trustProxy: 0,
+            socketAddress: expect.stringMatching(/127\.0\.0\.1$/) as unknown,
             ip: expect.stringMatching(/127\.0\.0\.1$/) as unknown,
           }) as unknown,
         ],

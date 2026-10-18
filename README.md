@@ -336,7 +336,12 @@ Decisões registradas:
   nginx/Caddy/Traefik, `1`. Com uma CDN na frente do proxy, `2`. Conferência: com
   `LOG_LEVEL=info`, provoque um `429` (ex.: onze logins errados) e leia o campo `ip` no log
   `Rate limit reached`: tem que ser o seu IP público, não o do proxy nem um endereço
-  interno (`10.x`, `172.16–31.x`, `192.168.x`, `127.0.0.1`).
+  interno (`10.x`, `172.16–31.x`, `192.168.x`, `127.0.0.1`). O mesmo log traz de onde o
+  `ip` saiu: `forwardedFor` (a cadeia que os proxies montaram, do cliente para a
+  direita), `socketAddress` (a conexão em si) e `trustProxy` (o valor em vigor, que
+  mostra se a variável chegou ao processo). Se o `ip` for de uma CDN, o seu IP real
+  costuma estar numa entrada à esquerda de `forwardedFor`; some à contagem as entradas
+  que ficaram à direita dele.
 - **IPv6.** O limite conta pelo prefixo `/64`, não pelo endereço inteiro, porque quem tem
   um IPv6 residencial controla um bloco inteiro e trocar de endereço dentro dele seria
   contornar o limite de graça.
