@@ -113,6 +113,8 @@ describe('Rate limiting (e2e)', () => {
     beforeAll(async () => {
       app = await createApp(
         {
+          // The refusal is logged at `warn`; the CI environment runs at `error`.
+          LOG_LEVEL: 'warn',
           RATE_LIMIT_AUTH_LIMIT: '3',
           RATE_LIMIT_AUTH_WINDOW_SECONDS: '60',
           RATE_LIMIT_RECOVERY_LIMIT: '2',
